@@ -1,46 +1,49 @@
 # Advanced Web Development Frameworks (ITUE301)
 
-## Practical 1: Introduction to React and Component Architecture
+## Practical 2: Routing and Interactive Forms
 
 **Student Name:** Shubham Dholakiya  
 **College:** CHARUSAT (Charotar University of Science and Technology)  
 **Branch:** B.Tech Artificial Intelligence & Machine Learning  
 **Semester:** 5th Semester  
-**GitHub Repository:** [https://github.com/SHUBHAM98799/AWT](https://github.com/SHUBHAM98799/AWT)
+**GitHub Repository:** [https://github.com/SHUBHAM98799/AWT](https://github.com/SHUBHAM98799/AWT)  
+**Current Branch:** `practical-2`
 
 ---
 
 ### 📝 Description
-This application implements a static student profile directory demonstrating basic component structures and props data flow under React 19 and Vite. The design focuses purely on custom element isolation and structural reusability. It is unstyled and performs direct component mounts.
+This application builds on Practical 1 by adding full client-side routing, interactive forms, and dynamic UI state toggles. The styling incorporates a premium, glassmorphic dark theme, custom background aurora gradients, and interactive mouse cursor glows.
 
-### 🛠️ Technologies Used
-- **Core React 19**: Rendering functional components and processing dynamic attributes.
-- **Vite 8**: Modern module bundler with Hot Module Replacement (HMR).
-- **JSX**: Syntax extension to integrate structural elements inside JavaScript.
-- **Props**: Unidirectional data-sharing bindings.
+### 🛠️ Key Fulfillments
+1. **React Router v6**: Wrapped application root in `BrowserRouter` and configured routes for Home (`/`), Projects (`/projects`), Contact (`/contact`), and Not Found (`*`).
+2. **Controlled Form Inputs**: Leveraged controlled component logic (`useState`) on name, email, and message fields in the `Contact` page.
+3. **Live Character Metrics**: Tracks real-time input length and logs character feedback strings.
+4. **Theme Toggle States**: Custom light/dark theme switch that feeds parameters into the floating `NavBar` component.
+5. **Interactive AI Terminal**: Simulated monospaced shell console to process user queries.
+
+---
 
 ### 📂 Folder Structure
-The source directories are organized under standard components and layout layers. All styling has been temporarily disabled. Future views are preserved but remain unimported.
-
+The components are modularly organized:
 ```
 src/
 ├── assets/           # Media parameters and icons
 ├── components/       # Reusable components
-│   ├── Header.jsx    # Accepts "name" and renders student details
-│   ├── About.jsx     # Bio context and academic background
-│   ├── Skills.jsx    # Accepts "skillList" and maps values in standard bullets
-│   ├── Footer.jsx    # Simple unstyled copyright footer
-│   ├── Navbar.jsx    # (Unused for Practical 1)
-│   └── AITerminal.jsx# (Unused for Practical 1)
-├── pages/            # Core layout wrappers (Unused for Practical 1)
-│   ├── Home.jsx
-│   ├── Projects.jsx
-│   ├── Contact.jsx
-│   └── NotFound.jsx
-├── App.jsx           # Parent layout and props controller
-├── main.jsx          # React app mounting root
-├── App.css           # Preserved layout styles (Unimported)
-└── index.css         # Preserved custom stylesheet (Unimported)
+│   ├── Header.jsx    # Accepts "name" and "themeColor" and renders dynamic typing subtitles
+│   ├── NavBar.jsx    # Sticky navigation dock supporting routing highlights and theme switches
+│   ├── About.jsx     # Timelines and student profile parameters
+│   ├── Skills.jsx    # Categorized skill badges
+│   ├── AITerminal.jsx# Terminal simulator accepting terminal command directives
+│   └── Footer.jsx    # Premium copyright and social links footer
+├── pages/            # Core layout wrappers mapped to routes
+│   ├── Home.jsx      # Home layout composing About, AITerminal, and Skills
+│   ├── Projects.jsx  # Case-study grids highlighting tech tags
+│   ├── Contact.jsx   # Controlled communication form
+│   └── NotFound.jsx  # Custom 404 page
+├── App.jsx           # Coordinates parent hooks, layout routes, and cursor tracking
+├── main.jsx          # Entry point mounting Router context
+├── App.css           # Styling parameters
+└── index.css         # Customized core design system stylesheet
 ```
 
 ---
@@ -52,11 +55,10 @@ src/
    npm install
    ```
 
-2. **Launch Local Server**:
+2. **Launch Developer Server**:
    ```bash
    npm run dev
    ```
-   Open `http://localhost:5173` to view the plain text component composition.
 
 3. **Verify Build Compilation**:
    ```bash
@@ -67,11 +69,3 @@ src/
    ```bash
    npm run lint
    ```
-
----
-
-### 🎯 Learning Outcomes
-- Understood the core concepts of React components and JSX.
-- Structured separate components following a modular layout tree.
-- Passed static properties (`name` and `skillList`) from the parent layout to children.
-- Verified how React isolates rendering responsibilities.
