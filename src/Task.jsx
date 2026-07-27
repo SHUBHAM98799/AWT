@@ -1,55 +1,65 @@
-// In-memory array to store tasks (no database)
-let tasks = [
-  { id: 1, title: 'Learn React component architecture' },
-  { id: 2, title: 'Design a responsive dashboard' },
-  { id: 3, title: 'Prepare for Practical examination' }
-]
+const API_BASE_URL = 'http://localhost:5000/tasks'
 
 /**
- * GET - Return all tasks
+ * GET - Return all tasks from the Express backend
  */
-export function getTasks() {
-  return [...tasks]
+export async function getTasks() {
+  const response = await fetch(API_BASE_URL)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch tasks: ${response.statusText}`)
+  }
+  return response.json()
 }
 
 /**
- * POST - Create a new task
+ * POST - Create a new task in the Express backend
  */
-export function addTask(title) {
+export async function addTask(title) {
   if (!title || !title.trim()) return null
 
-  const newTask = {
-    id: Date.now(),
-    title: title.trim()
+  const response = await fetch(API_BASE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: title.trim() })
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to add task: ${response.statusText}`)
   }
 
-  tasks.push(newTask)
-  return newTask
+  return response.json()
 }
 
 /**
- * PUT - Update an existing task
+ * PUT - Update an existing task in the Express backend
  */
-export function updateTask(id, title) {
+export async function updateTask(id, title) {
   if (!title || !title.trim()) return null
 
-  const taskIndex = tasks.findIndex((t) => t.id === id)
-  if (taskIndex !== -1) {
-    tasks[taskIndex].title = title.trim()
-    return tasks[taskIndex]
+  const response = await fetch(`${API_BASE_URL}/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: title.trim() })
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to update task: ${response.statusText}`)
   }
 
-  return null
+  return response.json()
 }
 
 /**
- * DELETE - Delete a task
+ * DELETE - Delete a task from the Express backend
  */
-export function deleteTask(id) {
-  const taskIndex = tasks.findIndex((t) => t.id === id)
-  if (taskIndex !== -1) {
-    return tasks.splice(taskIndex, 1)[0]
+export async function deleteTask(id) {
+  const response = await fetch(`${API_BASE_URL}/${id}`, {
+    method: 'DELETE'
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete task: ${response.statusText}`)
   }
 
-  return null
+  return response.json()
 }
