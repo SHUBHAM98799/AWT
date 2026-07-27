@@ -12,6 +12,9 @@ export default function NavBar({ onToggleTheme, dark }) {
       <NavLink to="/contact" className={({ isActive }) => isActive ? 'active' : undefined}>
         Contact
       </NavLink>
+      <NavLink to="/todo" className={({ isActive }) => isActive ? 'active' : undefined}>
+        Todo
+      </NavLink>
       <div style={{ marginLeft: '1rem', borderLeft: '1px solid var(--surface-border)', paddingLeft: '1rem', display: 'flex', alignItems: 'center' }}>
         <button className="btn" onClick={onToggleTheme} aria-label="Toggle Theme">
           {dark ? (

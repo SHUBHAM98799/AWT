@@ -6,6 +6,7 @@ import NavBar from './components/NavBar'
 import Home from './pages/Home'
 import Projects from './pages/Projects'
 import Contact from './pages/Contact'
+import Todo from './pages/Todo'
 import NotFound from './pages/NotFound'
 import { Routes, Route } from 'react-router-dom'
 
@@ -52,6 +53,7 @@ function App() {
             <Route path="/" element={<Home name={name} role={role} skills={skills} />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/contact" element={<Contact />} />
+            <Route path="/todo" element={<Todo />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>
