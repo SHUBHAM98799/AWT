@@ -6,7 +6,7 @@ import NavBar from './components/NavBar'
 import Home from './pages/Home'
 import Projects from './pages/Projects'
 import Contact from './pages/Contact'
-import Todo from './pages/Todo'
+import Todo from './Todo'
 import NotFound from './pages/NotFound'
 import { Routes, Route } from 'react-router-dom'
 
