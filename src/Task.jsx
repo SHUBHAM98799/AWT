@@ -1,4 +1,12 @@
-const API_BASE_URL = 'http://localhost:5000/tasks'
+const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    return `http://${window.location.hostname}:5000/tasks`
+  }
+  return 'http://localhost:5000/tasks'
+}
+
+const API_BASE_URL = getApiBaseUrl()
+
 
 /**
  * GET - Return all tasks from the Express backend

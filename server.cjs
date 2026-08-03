@@ -50,7 +50,7 @@ app.get('/tasks', (req, res) => {
   try {
     res.status(200).json(tasks)
   } catch (err) {
-    res.status(500).json({ error: 'Internal Server Error' })
+    res.status(500).json({ error: 'Something went wrong' })
   }
 })
 
@@ -71,7 +71,7 @@ app.post('/tasks', (req, res) => {
     tasks.push(newTask)
     res.status(201).json(newTask)
   } catch (err) {
-    res.status(500).json({ error: 'Internal Server Error' })
+    res.status(500).json({ error: 'Something went wrong' })
   }
 })
 
@@ -94,7 +94,7 @@ app.put('/tasks/:id', validateTaskId, (req, res) => {
     tasks[taskIndex].title = title.trim()
     res.status(200).json(tasks[taskIndex])
   } catch (err) {
-    res.status(500).json({ error: 'Internal Server Error' })
+    res.status(500).json({ error: 'Something went wrong' })
   }
 })
 
@@ -108,10 +108,10 @@ app.delete('/tasks/:id', validateTaskId, (req, res) => {
       return res.status(404).json({ error: `Task with id ${id} not found.` })
     }
 
-    const deletedTask = tasks.splice(taskIndex, 1)[0]
-    res.status(200).json(deletedTask)
+    tasks.splice(taskIndex, 1)
+    res.status(200).json({ message: 'Task deleted successfully' })
   } catch (err) {
-    res.status(500).json({ error: 'Internal Server Error' })
+    res.status(500).json({ error: 'Something went wrong' })
   }
 })
 
@@ -135,13 +135,7 @@ app.use((req, res, next) => {
 // ─── MIDDLEWARE 2: Global Error Handler (MUST be last) ───
 app.use((err, req, res, next) => {
   console.error('Captured Global Error:', err.message || err)
-  const statusCode = err.status || err.statusCode || 500
-  res.status(statusCode).json({
-    error: {
-      status: statusCode,
-      message: err.message || 'Internal Server Error'
-    }
-  })
+  res.status(500).json({ error: 'Something went wrong' })
 })
 
 // Spin up server with macOS port 5000 help handling
