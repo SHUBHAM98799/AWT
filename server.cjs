@@ -19,8 +19,29 @@ app.use((req, res, next) => {
 })
 
 app.use(cors())
+
+// Reject POST/PUT requests missing Content-Type: application/json
+app.use((req, res, next) => {
+  if (req.method === 'POST' || req.method === 'PUT') {
+    const contentType = req.headers['content-type']
+    if (!contentType || !contentType.includes('application/json')) {
+      return res.status(400).json({ error: 'Content-Type must be application/json' })
+    }
+  }
+  next()
+})
+
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+
+// Route-specific middleware: Validate Task ID format
+const validateTaskId = (req, res, next) => {
+  const id = parseInt(req.params.id, 10)
+  if (isNaN(id) || id.toString() !== req.params.id) {
+    return res.status(400).json({ error: 'Invalid task ID format. Must be an integer.' })
+  }
+  next()
+}
 
 // ─── CRUD Endpoints ───
 
@@ -55,7 +76,7 @@ app.post('/tasks', (req, res) => {
 })
 
 // PUT /tasks/:id - Update an existing task
-app.put('/tasks/:id', (req, res) => {
+app.put('/tasks/:id', validateTaskId, (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     const { title } = req.body
@@ -78,7 +99,7 @@ app.put('/tasks/:id', (req, res) => {
 })
 
 // DELETE /tasks/:id - Delete a task
-app.delete('/tasks/:id', (req, res) => {
+app.delete('/tasks/:id', validateTaskId, (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
     const taskIndex = tasks.findIndex((t) => t.id === id)
@@ -104,6 +125,11 @@ app.get('/trigger-error', (req, res, next) => {
 // Status check endpoint
 app.get('/status', (req, res) => {
   res.status(200).json({ status: 'UP', message: 'Express CRUD server is running.' })
+})
+
+// Custom 404 handler for undefined routes
+app.use((req, res, next) => {
+  res.status(404).json({ error: 'Route not found' })
 })
 
 // ─── MIDDLEWARE 2: Global Error Handler (MUST be last) ───
