@@ -1,5 +1,7 @@
 const express = require('express')
 const cors = require('cors')
+const fs = require('fs')
+const path = require('path')
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -11,10 +13,39 @@ let tasks = [
   { id: 3, title: 'Prepare for Practical examination' }
 ]
 
+// Setup request logging to logs/requests.log.csv
+const logsDir = path.join(__dirname, 'logs')
+const logFilePath = path.join(logsDir, 'requests.log.csv')
+
+// Ensure logs directory and file exist
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true })
+}
+if (!fs.existsSync(logFilePath)) {
+  fs.writeFileSync(logFilePath, 'Timestamp,Method,URL,IP,StatusCode\n')
+}
+
 // ─── MIDDLEWARE 1: Global Request Logger ───
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString()
-  console.log(`[${timestamp}] ${req.method} ${req.originalUrl || req.url}`)
+  const method = req.method
+  const url = req.originalUrl || req.url
+  let ip = req.ip || req.connection?.remoteAddress || '::1'
+  if (ip === '::ffff:127.0.0.1') ip = '127.0.0.1'
+
+  res.on('finish', () => {
+    const statusCode = res.statusCode
+    // Log to console
+    console.log(`[${timestamp}] ${method} ${url} ${ip} HTTP ${statusCode}`)
+
+    // Append to CSV file
+    const csvLine = `${timestamp},${method},${url},${ip},${statusCode}\n`
+    fs.appendFile(logFilePath, csvLine, (err) => {
+      if (err) {
+        console.error('Failed to append to request log CSV:', err)
+      }
+    })
+  })
   next()
 })
 
@@ -140,7 +171,8 @@ app.use((err, req, res, next) => {
 
 // Spin up server with macOS port 5000 help handling
 const server = app.listen(PORT, () => {
-  console.log(`Express server listening on http://localhost:${PORT}`)
+  console.log(`Task Management server running on http://localhost:${PORT}`)
+  console.log(`Logging requests to CSV:\nlogs/requests.log.csv`)
 })
 
 server.on('error', (err) => {
