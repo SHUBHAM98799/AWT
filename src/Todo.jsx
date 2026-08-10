@@ -56,7 +56,7 @@ export default function Todo() {
       const updated = await updateTask(id, editingTitle)
       if (updated) {
         // Instantly update local state without page reload
-        setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)))
+        setTasks((prev) => prev.map((t) => (t._id === id ? updated : t)))
         setEditingTaskId(null)
         setEditingTitle('')
       }
@@ -72,7 +72,7 @@ export default function Todo() {
       const deleted = await deleteTask(id)
       if (deleted) {
         // Instantly remove task from state without page reload
-        setTasks((prev) => prev.filter((t) => t.id !== id))
+        setTasks((prev) => prev.filter((t) => t._id !== id))
       }
     } catch (err) {
       console.error(err)
@@ -81,7 +81,7 @@ export default function Todo() {
   }
 
   const startEdit = (task) => {
-    setEditingTaskId(task.id)
+    setEditingTaskId(task._id)
     setEditingTitle(task.title)
   }
 
@@ -149,8 +149,8 @@ export default function Todo() {
           ) : (
             <ul className="todo-grid">
               {tasks.map((task) => (
-                <li key={task.id} className="project-card todo-card">
-                  {editingTaskId === task.id ? (
+                <li key={task._id} className="project-card todo-card">
+                  {editingTaskId === task._id ? (
                     /* Edit Mode Panel */
                     <div className="todo-edit-panel">
                       <input
@@ -163,7 +163,7 @@ export default function Todo() {
                       <div className="todo-edit-actions">
                         <button
                           className="btn btn-primary todo-btn-save"
-                          onClick={() => handleUpdateTask(task.id)}
+                          onClick={() => handleUpdateTask(task._id)}
                           disabled={!editingTitle.trim()}
                         >
                           Save
@@ -186,7 +186,7 @@ export default function Todo() {
                           </svg>
                           Edit
                         </button>
-                        <button className="btn todo-btn-delete" onClick={() => handleDeleteTask(task.id)}>
+                        <button className="btn todo-btn-delete" onClick={() => handleDeleteTask(task._id)}>
                           {/* Delete icon */}
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="3 6 5 6 21 6" />

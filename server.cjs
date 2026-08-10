@@ -2,49 +2,115 @@ const express = require('express')
 const cors = require('cors')
 const fs = require('fs')
 const path = require('path')
+const mongoose = require('mongoose')
 
 const app = express()
 const PORT = process.env.PORT || 5000
 
-// In-memory task array (NO DATABASE)
-let tasks = [
-  { id: 1, title: 'Learn React component architecture' },
-  { id: 2, title: 'Design a responsive dashboard' },
-  { id: 3, title: 'Prepare for Practical examination' }
-]
-
-// Setup request logging to logs/requests.log.csv
-const logsDir = path.join(__dirname, 'logs')
-const logFilePath = path.join(logsDir, 'requests.log.csv')
-
-// Ensure logs directory and file exist
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir, { recursive: true })
+// Simple dependency-free helper to load .env if it exists
+const dotenvPath = path.join(__dirname, '.env')
+if (fs.existsSync(dotenvPath)) {
+  try {
+    const envContent = fs.readFileSync(dotenvPath, 'utf8')
+    envContent.split(/\r?\n/).forEach(line => {
+      const trimmed = line.trim()
+      if (trimmed && !trimmed.startsWith('#')) {
+        const index = trimmed.indexOf('=')
+        if (index !== -1) {
+          const key = trimmed.substring(0, index).trim()
+          const value = trimmed.substring(index + 1).trim().replace(/^['"]|['"]$/g, '')
+          if (key) {
+            process.env[key] = value
+          }
+        }
+      }
+    })
+  } catch (err) {
+    console.error('Failed to read .env file:', err.message)
+  }
 }
-if (!fs.existsSync(logFilePath)) {
-  fs.writeFileSync(logFilePath, 'Timestamp,Method,URL,IP,StatusCode\n')
-}
 
-// ─── MIDDLEWARE 1: Global Request Logger ───
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/todoDB'
+
+// Connect to MongoDB when the server starts
+mongoose.connect(MONGO_URI)
+  .then(() => {
+    console.log(`Connected to MongoDB successfully at: ${MONGO_URI}`)
+  })
+  .catch((err) => {
+    console.error(`❌ MongoDB connection error: Could not connect to database at ${MONGO_URI}`)
+    console.error(err.message || err)
+  })
+
+// ─── MONGOOSE SCHEMAS & MODELS ───
+
+// Task Model
+const taskSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+})
+const Task = mongoose.model('Task', taskSchema, 'tasks')
+
+// RequestLog Model
+const requestLogSchema = new mongoose.Schema({
+  timestamp: {
+    type: Date,
+    required: true
+  },
+  method: {
+    type: String,
+    required: true
+  },
+  url: {
+    type: String,
+    required: true
+  },
+  ip: {
+    type: String,
+    required: true
+  },
+  statusCode: {
+    type: Number,
+    required: true
+  }
+})
+const RequestLog = mongoose.model('RequestLog', requestLogSchema, 'requestLogs')
+
+// ─── MIDDLEWARE 1: Global Request Logger (saves to MongoDB) ───
 app.use((req, res, next) => {
-  const timestamp = new Date().toISOString()
+  const timestamp = new Date()
   const method = req.method
   const url = req.originalUrl || req.url
   let ip = req.ip || req.connection?.remoteAddress || '::1'
   if (ip === '::ffff:127.0.0.1') ip = '127.0.0.1'
 
-  res.on('finish', () => {
+  res.on('finish', async () => {
     const statusCode = res.statusCode
-    // Log to console
-    console.log(`[${timestamp}] ${method} ${url} ${ip} HTTP ${statusCode}`)
+    // Log to terminal
+    console.log(`[${timestamp.toISOString()}] ${method} ${url} ${ip} HTTP ${statusCode}`)
 
-    // Append to CSV file
-    const csvLine = `${timestamp},${method},${url},${ip},${statusCode}\n`
-    fs.appendFile(logFilePath, csvLine, (err) => {
-      if (err) {
-        console.error('Failed to append to request log CSV:', err)
+    // Save request log to MongoDB requestLogs collection
+    try {
+      if (mongoose.connection.readyState === 1) {
+        const logEntry = new RequestLog({
+          timestamp,
+          method,
+          url,
+          ip,
+          statusCode
+        })
+        await logEntry.save()
       }
-    })
+    } catch (err) {
+      console.error('Failed to save request log to MongoDB:', err.message || err)
+    }
   })
   next()
 })
@@ -65,28 +131,29 @@ app.use((req, res, next) => {
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
-// Route-specific middleware: Validate Task ID format
+// Route-specific middleware: Validate Task ID format for MongoDB ObjectId
 const validateTaskId = (req, res, next) => {
-  const id = parseInt(req.params.id, 10)
-  if (isNaN(id) || id.toString() !== req.params.id) {
-    return res.status(400).json({ error: 'Invalid task ID format. Must be an integer.' })
+  const { id } = req.params
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: 'Invalid task ID' })
   }
   next()
 }
 
 // ─── CRUD Endpoints ───
 
-// GET /tasks - Return all tasks
-app.get('/tasks', (req, res) => {
+// GET /tasks - Return all tasks from MongoDB
+app.get('/tasks', async (req, res, next) => {
   try {
+    const tasks = await Task.find().sort({ createdAt: 1 })
     res.status(200).json(tasks)
   } catch (err) {
-    res.status(500).json({ error: 'Something went wrong' })
+    next(err)
   }
 })
 
-// POST /tasks - Create a new task
-app.post('/tasks', (req, res) => {
+// POST /tasks - Create a new task in MongoDB
+app.post('/tasks', async (req, res, next) => {
   try {
     const { title } = req.body
 
@@ -94,55 +161,56 @@ app.post('/tasks', (req, res) => {
       return res.status(400).json({ error: 'Task title is required.' })
     }
 
-    const newTask = {
-      id: Date.now(),
+    const newTask = new Task({
       title: title.trim()
-    }
+    })
 
-    tasks.push(newTask)
+    await newTask.save()
     res.status(201).json(newTask)
   } catch (err) {
-    res.status(500).json({ error: 'Something went wrong' })
+    next(err)
   }
 })
 
-// PUT /tasks/:id - Update an existing task
-app.put('/tasks/:id', validateTaskId, (req, res) => {
+// PUT /tasks/:id - Update an existing task in MongoDB using ObjectId
+app.put('/tasks/:id', validateTaskId, async (req, res, next) => {
   try {
-    const id = parseInt(req.params.id, 10)
+    const { id } = req.params
     const { title } = req.body
 
     if (!title || typeof title !== 'string' || !title.trim()) {
       return res.status(400).json({ error: 'Task title is required.' })
     }
 
-    const taskIndex = tasks.findIndex((t) => t.id === id)
+    const updatedTask = await Task.findByIdAndUpdate(
+      id,
+      { title: title.trim() },
+      { new: true }
+    )
 
-    if (taskIndex === -1) {
-      return res.status(404).json({ error: `Task with id ${id} not found.` })
+    if (!updatedTask) {
+      return res.status(404).json({ error: 'Task not found' })
     }
 
-    tasks[taskIndex].title = title.trim()
-    res.status(200).json(tasks[taskIndex])
+    res.status(200).json(updatedTask)
   } catch (err) {
-    res.status(500).json({ error: 'Something went wrong' })
+    next(err)
   }
 })
 
-// DELETE /tasks/:id - Delete a task
-app.delete('/tasks/:id', validateTaskId, (req, res) => {
+// DELETE /tasks/:id - Delete a task from MongoDB using ObjectId
+app.delete('/tasks/:id', validateTaskId, async (req, res, next) => {
   try {
-    const id = parseInt(req.params.id, 10)
-    const taskIndex = tasks.findIndex((t) => t.id === id)
+    const { id } = req.params
+    const deletedTask = await Task.findByIdAndDelete(id)
 
-    if (taskIndex === -1) {
-      return res.status(404).json({ error: `Task with id ${id} not found.` })
+    if (!deletedTask) {
+      return res.status(404).json({ error: 'Task not found' })
     }
 
-    tasks.splice(taskIndex, 1)
     res.status(200).json({ message: 'Task deleted successfully' })
   } catch (err) {
-    res.status(500).json({ error: 'Something went wrong' })
+    next(err)
   }
 })
 
@@ -172,7 +240,6 @@ app.use((err, req, res, next) => {
 // Spin up server with macOS port 5000 help handling
 const server = app.listen(PORT, () => {
   console.log(`Task Management server running on http://localhost:${PORT}`)
-  console.log(`Logging requests to CSV:\nlogs/requests.log.csv`)
 })
 
 server.on('error', (err) => {
