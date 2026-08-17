@@ -83,7 +83,19 @@ const requestLogSchema = new mongoose.Schema({
 })
 const RequestLog = mongoose.model('RequestLog', requestLogSchema, 'requestLogs')
 
-// ─── MIDDLEWARE 1: Global Request Logger (saves to MongoDB) ───
+// Setup request logging to logs/requests.log.csv
+const logsDir = path.join(__dirname, 'logs')
+const logFilePath = path.join(logsDir, 'requests.log.csv')
+
+// Ensure logs directory and file exist
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true })
+}
+if (!fs.existsSync(logFilePath)) {
+  fs.writeFileSync(logFilePath, 'Timestamp,Method,URL,IP,StatusCode\n')
+}
+
+// ─── MIDDLEWARE 1: Global Request Logger (saves to MongoDB & CSV) ───
 app.use((req, res, next) => {
   const timestamp = new Date()
   const method = req.method
@@ -95,6 +107,14 @@ app.use((req, res, next) => {
     const statusCode = res.statusCode
     // Log to terminal
     console.log(`[${timestamp.toISOString()}] ${method} ${url} ${ip} HTTP ${statusCode}`)
+
+    // Append to CSV file
+    const csvLine = `${timestamp.toISOString()},${method},${url},${ip},${statusCode}\n`
+    fs.appendFile(logFilePath, csvLine, (err) => {
+      if (err) {
+        console.error('Failed to append to request log CSV:', err.message || err)
+      }
+    })
 
     // Save request log to MongoDB requestLogs collection
     try {

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { getTasks, addTask, updateTask, deleteTask } from './Task'
+import { useState, useEffect, useRef } from 'react'
+import { getTasks, createTask, updateTask, deleteTask } from './api'
 
 export default function Todo() {
   const [tasks, setTasks] = useState([])
@@ -8,75 +8,127 @@ export default function Todo() {
   const [editingTitle, setEditingTitle] = useState('')
   
   // Loading & Connection Error States
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [loadingGet, setLoadingGet] = useState(false)
+  const [loadingAdd, setLoadingAdd] = useState(false)
+  const [loadingUpdateId, setLoadingUpdateId] = useState(null)
+  const [loadingDeleteId, setLoadingDeleteId] = useState(null)
+  
+  const [errorGet, setErrorGet] = useState(null)
+
+  // Toast / Notification State
+  const [toast, setToast] = useState(null)
+  const toastTimeoutRef = useRef(null)
+
+  const showToast = (message, type = 'success') => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current)
+    }
+    setToast({ message, type })
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null)
+    }, 3000)
+  }
 
   // Fetch tasks on component mount (GET)
   const fetchTasks = async () => {
-    setLoading(true)
-    setError(null)
+    setLoadingGet(true)
+    setErrorGet(null)
     try {
       const data = await getTasks()
       setTasks(data)
     } catch (err) {
       console.error(err)
-      setError('Could not connect to the tasks server. Please verify the Express backend is running on port 5000.')
+      setErrorGet('Could not connect to the tasks server. Please verify the Express backend is running on port 5000.')
     } finally {
-      setLoading(false)
+      setLoadingGet(false)
     }
   }
 
   useEffect(() => {
     fetchTasks()
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current)
+      }
+    }
   }, [])
 
-  // Add a task (POST)
+  // Add a task with Optimistic UI (POST)
   const handleAddTask = async (e) => {
     e.preventDefault()
-    if (!newTitle.trim()) return
+    const titleToAdd = newTitle.trim()
+    if (!titleToAdd) return
+
+    setLoadingAdd(true)
+    
+    // Create temporary optimistic task
+    const tempId = `temp-${Date.now()}`
+    const tempTask = {
+      _id: tempId,
+      title: titleToAdd,
+      createdAt: new Date().toISOString(),
+      isOptimistic: true
+    }
+
+    // Optimistically update UI list
+    setTasks((prev) => [...prev, tempTask])
+    setNewTitle('')
 
     try {
-      const newTask = await addTask(newTitle)
-      if (newTask) {
-        // Instantly update task list without page reload
-        setTasks((prev) => [...prev, newTask])
-        setNewTitle('')
-      }
+      const createdTask = await createTask(titleToAdd)
+      // Replace optimistic task with actual DB task
+      setTasks((prev) =>
+        prev.map((t) => (t._id === tempId ? createdTask : t))
+      )
+      showToast('Task created successfully.', 'success')
     } catch (err) {
       console.error(err)
-      alert('Error creating task. Check if the server is active.')
+      // Revert optimistic update
+      setTasks((prev) => prev.filter((t) => t._id !== tempId))
+      // Recover input text
+      setNewTitle(titleToAdd)
+      showToast(err.message || 'Failed to create task.', 'error')
+    } finally {
+      setLoadingAdd(false)
     }
   }
 
   // Update a task (PUT)
   const handleUpdateTask = async (id) => {
-    if (!editingTitle.trim()) return
+    const titleToUpdate = editingTitle.trim()
+    if (!titleToUpdate) return
 
+    setLoadingUpdateId(id)
     try {
-      const updated = await updateTask(id, editingTitle)
-      if (updated) {
-        // Instantly update local state without page reload
-        setTasks((prev) => prev.map((t) => (t._id === id ? updated : t)))
-        setEditingTaskId(null)
-        setEditingTitle('')
-      }
+      const updated = await updateTask(id, titleToUpdate)
+      setTasks((prev) => prev.map((t) => (t._id === id ? updated : t)))
+      setEditingTaskId(null)
+      setEditingTitle('')
+      showToast('Task updated successfully.', 'success')
     } catch (err) {
       console.error(err)
-      alert('Error updating task.')
+      showToast(err.message || 'Failed to update task.', 'error')
+    } finally {
+      setLoadingUpdateId(null)
     }
   }
 
   // Delete a task (DELETE)
   const handleDeleteTask = async (id) => {
+    // Show confirmation dialog before deleting
+    const confirmDelete = window.confirm('Are you sure you want to delete this task?')
+    if (!confirmDelete) return
+
+    setLoadingDeleteId(id)
     try {
-      const deleted = await deleteTask(id)
-      if (deleted) {
-        // Instantly remove task from state without page reload
-        setTasks((prev) => prev.filter((t) => t._id !== id))
-      }
+      await deleteTask(id)
+      setTasks((prev) => prev.filter((t) => t._id !== id))
+      showToast('Task deleted successfully.', 'success')
     } catch (err) {
       console.error(err)
-      alert('Error deleting task.')
+      showToast(err.message || 'Failed to delete task.', 'error')
+    } finally {
+      setLoadingDeleteId(null)
     }
   }
 
@@ -102,33 +154,37 @@ export default function Todo() {
         <input
           type="text"
           className="form-control todo-input"
-          placeholder="Initiate new protocol / task title..."
+          placeholder={loadingAdd ? "Processing new task..." : "Initiate new protocol / task title..."}
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
-          disabled={loading}
+          disabled={loadingGet || loadingAdd}
         />
-        <button type="submit" className="btn btn-primary todo-add-btn" disabled={loading || !newTitle.trim()}>
-          Add Task
+        <button 
+          type="submit" 
+          className="btn btn-primary todo-add-btn" 
+          disabled={loadingGet || loadingAdd || !newTitle.trim()}
+        >
+          {loadingAdd ? 'Adding...' : 'Add Task'}
         </button>
       </form>
 
-      {/* ─── Connection Loading State ─── */}
-      {loading && (
+      {/* ─── Initial Loading State ─── */}
+      {loadingGet && (
         <div className="github-status">
           <div className="loading-spinner" />
-          <p>Synchronizing task mainframe...</p>
+          <p>Loading tasks...</p>
         </div>
       )}
 
       {/* ─── Connection Error State ─── */}
-      {error && (
+      {errorGet && !loadingGet && (
         <div className="github-status github-error">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
-          <p>{error}</p>
+          <p>{errorGet}</p>
           <button className="btn btn-primary" onClick={fetchTasks}>
             Retry Sync
           </button>
@@ -136,7 +192,7 @@ export default function Todo() {
       )}
 
       {/* ─── Task List Grid ─── */}
-      {!loading && !error && (
+      {!loadingGet && !errorGet && (
         <div className="todo-results">
           {tasks.length === 0 ? (
             <div className="github-status github-empty">
@@ -149,7 +205,7 @@ export default function Todo() {
           ) : (
             <ul className="todo-grid">
               {tasks.map((task) => (
-                <li key={task._id} className="project-card todo-card">
+                <li key={task._id} className="project-card todo-card" style={{ opacity: task.isOptimistic ? 0.7 : 1 }}>
                   {editingTaskId === task._id ? (
                     /* Edit Mode Panel */
                     <div className="todo-edit-panel">
@@ -158,17 +214,22 @@ export default function Todo() {
                         className="form-control todo-edit-input"
                         value={editingTitle}
                         onChange={(e) => setEditingTitle(e.target.value)}
+                        disabled={loadingUpdateId === task._id}
                         autoFocus
                       />
                       <div className="todo-edit-actions">
                         <button
                           className="btn btn-primary todo-btn-save"
                           onClick={() => handleUpdateTask(task._id)}
-                          disabled={!editingTitle.trim()}
+                          disabled={loadingUpdateId === task._id || !editingTitle.trim()}
                         >
-                          Save
+                          {loadingUpdateId === task._id ? 'Updating...' : 'Save'}
                         </button>
-                        <button className="btn todo-btn-cancel" onClick={cancelEdit}>
+                        <button 
+                          className="btn todo-btn-cancel" 
+                          onClick={cancelEdit}
+                          disabled={loadingUpdateId === task._id}
+                        >
                           Cancel
                         </button>
                       </div>
@@ -176,9 +237,15 @@ export default function Todo() {
                   ) : (
                     /* Display Mode Panel */
                     <div className="todo-display-panel">
-                      <span className="todo-task-title">{task.title}</span>
+                      <span className="todo-task-title" style={{ fontStyle: task.isOptimistic ? 'italic' : 'normal' }}>
+                        {task.title} {task.isOptimistic && ' (Syncing...)'}
+                      </span>
                       <div className="todo-actions">
-                        <button className="btn todo-btn-edit" onClick={() => startEdit(task)}>
+                        <button 
+                          className="btn todo-btn-edit" 
+                          onClick={() => startEdit(task)}
+                          disabled={task.isOptimistic || loadingDeleteId === task._id}
+                        >
                           {/* Edit icon */}
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -186,7 +253,11 @@ export default function Todo() {
                           </svg>
                           Edit
                         </button>
-                        <button className="btn todo-btn-delete" onClick={() => handleDeleteTask(task._id)}>
+                        <button 
+                          className="btn todo-btn-delete" 
+                          onClick={() => handleDeleteTask(task._id)}
+                          disabled={task.isOptimistic || loadingDeleteId === task._id}
+                        >
                           {/* Delete icon */}
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="3 6 5 6 21 6" />
@@ -194,7 +265,7 @@ export default function Todo() {
                             <line x1="10" y1="11" x2="10" y2="17" />
                             <line x1="14" y1="11" x2="14" y2="17" />
                           </svg>
-                          Delete
+                          {loadingDeleteId === task._id ? 'Deleting...' : 'Delete'}
                         </button>
                       </div>
                     </div>
@@ -203,6 +274,23 @@ export default function Todo() {
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {/* Toast Notification Box */}
+      {toast && (
+        <div className={`toast-notification ${toast.type}`}>
+          {toast.type === 'success' ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          )}
+          <span>{toast.message}</span>
         </div>
       )}
     </section>
