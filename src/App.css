@@ -207,8 +207,8 @@ ul { padding-left: 18px; }
 /* Toast Notification System */
 .toast-notification {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  top: 20px;
+  right: 20px;
   padding: 12px 24px;
   border-radius: 8px;
   background: var(--surface);
@@ -240,11 +240,20 @@ ul { padding-left: 18px; }
 
 @keyframes slide-in {
   from {
-    transform: translateY(20px);
+    transform: translateY(-20px);
     opacity: 0;
   }
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .toast-notification {
+    top: 16px;
+    right: 16px;
+    left: 16px;
+    justify-content: center;
   }
 }
