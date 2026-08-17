@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { getTasks, createTask, updateTask, deleteTask } from './api'
 
+// Practical 6 - Synchronized CRUD actions with MongoDB and requests.log.csv
+
 export default function Todo() {
   const [tasks, setTasks] = useState([])
   const [newTitle, setNewTitle] = useState('')
