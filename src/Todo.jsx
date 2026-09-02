@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import { getTasks, createTask, updateTask, deleteTask } from './api'
+import { useNavigate, Link } from 'react-router-dom'
+import { getTasks, createTask, updateTask, deleteTask, getMe, getToken, logout } from './api'
 
-// Practical 6 - Synchronized CRUD actions with MongoDB and requests.log.csv
-
+// Practical 7 - Authenticated & Validated CRUD actions with JWT
 export default function Todo() {
   const [tasks, setTasks] = useState([])
   const [newTitle, setNewTitle] = useState('')
   const [editingTaskId, setEditingTaskId] = useState(null)
+  const [user, setUser] = useState(null)
   
   // Loading & Connection Error States
   const [loadingGet, setLoadingGet] = useState(false)
@@ -19,6 +20,7 @@ export default function Todo() {
   // Toast / Notification State
   const [toast, setToast] = useState(null)
   const toastTimeoutRef = useRef(null)
+  const navigate = useNavigate()
 
   const showToast = (message, type = 'success') => {
     if (toastTimeoutRef.current) {
@@ -27,32 +29,65 @@ export default function Todo() {
     setToast({ message, type })
     toastTimeoutRef.current = setTimeout(() => {
       setToast(null)
-    }, 3000)
+    }, 3500)
   }
 
-  // Fetch tasks on component mount (GET)
-  const fetchTasks = async () => {
+  // Handle 401 response: clear token, inform user, redirect to login
+  const handle401Error = () => {
+    logout()
+    showToast('Session expired. Please login again.', 'error')
+    setTimeout(() => {
+      navigate('/login')
+    }, 1000)
+  }
+
+  // Check auth and fetch user details & tasks
+  const initTodo = async () => {
+    const token = getToken()
+    if (!token) {
+      navigate('/login')
+      return
+    }
+
     setLoadingGet(true)
     setErrorGet(null)
+
     try {
+      // Fetch user profile
+      const userData = await getMe()
+      setUser(userData)
+
+      // Fetch tasks
       const data = await getTasks()
       setTasks(data)
     } catch (err) {
       console.error(err)
-      setErrorGet('Could not connect to the tasks server. Please verify the Express backend is running on port 5000.')
+      if (err.status === 401 || err.message?.includes('Authentication required') || err.message?.includes('Invalid or expired')) {
+        handle401Error()
+      } else {
+        setErrorGet('Could not connect to the tasks server. Please verify the Express backend is running on port 5000.')
+      }
     } finally {
       setLoadingGet(false)
     }
   }
 
   useEffect(() => {
-    fetchTasks()
+    initTodo()
     return () => {
       if (toastTimeoutRef.current) {
         clearTimeout(toastTimeoutRef.current)
       }
     }
   }, [])
+
+  // Handle Logout
+  const handleLogout = () => {
+    logout()
+    setUser(null)
+    showToast('Logged out successfully.', 'success')
+    navigate('/login')
+  }
 
   // Add a task with Optimistic UI (POST)
   const handleAddTask = async (e) => {
@@ -90,7 +125,12 @@ export default function Todo() {
       setTasks((prev) => prev.filter((t) => t._id !== tempId))
       // Recover input text
       setNewTitle(titleToAdd)
-      showToast(err.message || 'Failed to create task.', 'error')
+
+      if (err.status === 401) {
+        handle401Error()
+      } else {
+        showToast(err.message || 'Failed to create task.', 'error')
+      }
     } finally {
       setLoadingAdd(false)
     }
@@ -118,7 +158,11 @@ export default function Todo() {
       showToast('Task updated successfully.', 'success')
     } catch (err) {
       console.error(err)
-      showToast(err.message || 'Failed to update task.', 'error')
+      if (err.status === 401) {
+        handle401Error()
+      } else {
+        showToast(err.message || 'Failed to update task.', 'error')
+      }
     } finally {
       setLoadingUpdateId(null)
     }
@@ -135,13 +179,16 @@ export default function Todo() {
       await deleteTask(id)
       setTasks((prev) => prev.filter((t) => t._id !== id))
       showToast('Task deleted successfully.', 'success')
-      // If we are currently editing the task that was just deleted, cancel edit mode
       if (editingTaskId === id) {
         cancelEdit()
       }
     } catch (err) {
       console.error(err)
-      showToast(err.message || 'Failed to delete task.', 'error')
+      if (err.status === 401) {
+        handle401Error()
+      } else {
+        showToast(err.message || 'Failed to delete task.', 'error')
+      }
     } finally {
       setLoadingDeleteId(null)
     }
@@ -149,7 +196,7 @@ export default function Todo() {
 
   const startEdit = (task) => {
     setEditingTaskId(task._id)
-    setNewTitle(task.title) // Put the selected task title into the input field
+    setNewTitle(task.title)
   }
 
   const cancelEdit = () => {
@@ -159,11 +206,51 @@ export default function Todo() {
 
   const isPending = loadingAdd || loadingUpdateId !== null || loadingDeleteId !== null
 
+  if (!getToken()) {
+    return (
+      <section style={{ textAlign: 'center', margin: '3rem auto', maxWidth: '500px' }}>
+        <h2>// AUTHENTICATION REQUIRED</h2>
+        <p className="about-text" style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>
+          You must be logged in to view and manage tasks.
+        </p>
+        <Link to="/login" className="btn btn-primary">
+          Proceed to Login
+        </Link>
+      </section>
+    )
+  }
+
   return (
     <section>
-      <h2>// SYSTEM TASKS & TODO CORE</h2>
+      {/* ─── Header Auth Status Banner ─── */}
+      <div 
+        className="project-card" 
+        style={{ 
+          display: 'flex', 
+          justify: 'space-between', 
+          alignItems: 'center', 
+          padding: '0.8rem 1.2rem', 
+          marginBottom: '1.5rem',
+          borderColor: 'var(--surface-border)'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+          <span style={{ color: 'var(--muted)' }}>Authenticated User:</span>
+          <strong style={{ color: 'var(--accent)' }}>{user?.email || 'Loading user...'}</strong>
+        </div>
+        <button 
+          className="btn" 
+          onClick={handleLogout}
+          style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)' }}
+        >
+          Logout
+        </button>
+      </div>
+
+      <h2>// SYSTEM TASKS & TODO CORE (AUTHENTICATED)</h2>
       <p className="about-text" style={{ fontSize: '0.95rem', color: 'var(--muted)' }}>
-        Manage real-time tasks using Express REST API backend. All operations reflect instantly.
+        Manage real-time tasks using Express REST API backend with JWT Authorization middleware.
       </p>
 
       {/* ─── Add / Edit Task Form ─── */}
@@ -229,7 +316,7 @@ export default function Todo() {
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
           <p>{errorGet}</p>
-          <button className="btn btn-primary" onClick={fetchTasks}>
+          <button className="btn btn-primary" onClick={initTodo}>
             Retry Sync
           </button>
         </div>
@@ -268,7 +355,6 @@ export default function Todo() {
                         onClick={() => startEdit(task)}
                         disabled={isPending || task.isOptimistic}
                       >
-                        {/* Edit icon */}
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                           <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
@@ -280,7 +366,6 @@ export default function Todo() {
                         onClick={() => handleDeleteTask(task._id)}
                         disabled={isPending || task.isOptimistic}
                       >
-                        {/* Delete icon */}
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="3 6 5 6 21 6" />
                           <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />

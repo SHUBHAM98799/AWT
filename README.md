@@ -1,112 +1,125 @@
 # Advanced Web Development Frameworks (ITUE301)
 
-## Practical 6: Full Stack Integration (React + Express + MongoDB)
+## Practical 7: Authentication and Middleware Pipeline
 
 **Student Name:** Shubham Dholakiya  
 **College:** CHARUSAT (Charotar University of Science and Technology)  
 **Branch:** B.Tech Artificial Intelligence & Machine Learning  
 **Semester:** 5th Semester  
 **GitHub Repository:** [https://github.com/SHUBHAM98799/AWT](https://github.com/SHUBHAM98799/AWT)  
-**Current Branch:** `practical-6`
+**Current Branch:** `practical-7`
 
 ---
 
 ### 📝 Description
-Practical 6 wires the React frontend with the Express + Mongoose + MongoDB backend into a complete working full-stack application.
+Practical 7 implements JWT-based user authentication and server-side input validation middleware into the existing Express REST API backend and React frontend.
 
-The Task/Todo page connects directly to the local MongoDB database via the Express REST API backend, providing real-time data persistence. The frontend includes modern UX improvements such as Optimistic UI updates, toast notifications, loading indicators, and delete confirmation dialogs.
+It adds user registration with password hashing (`bcryptjs`), user login with JSON Web Token (`jsonwebtoken`) generation (1-hour expiry), authentication middleware (`authenticateToken`), input validation middleware (`validateAuthInput` and `validateTaskInput`), protected task routes, and user profile retrieval (`GET /me`).
+
+On the React frontend, it introduces `/register` and `/login` interfaces, auto-attaches JWT `Authorization: Bearer <token>` headers to central API calls in `src/api.js`, handles 401 unauthorized session expiries with automatic token cleanup and login redirects, and provides a Logout action.
 
 ---
 
-### 🛠️ Architecture Flow
+### 🛠️ Architecture Pipeline
 ```
+REGISTER / LOGIN
 React Frontend (localhost:5173)
-       |
-       | fetch API Calls (via central api.js)
-       v
-Express Backend (localhost:5000)
-       |
-       | Mongoose ORM
-       v
-MongoDB Database (localhost:27017)
-```
+       │
+       │ POST /register or POST /login (JSON body)
+       ▼
+Express Server (localhost:5000)
+       │
+       ├─► Validation Middleware (validateAuthInput)
+       │
+       ├─► bcrypt.hash / bcrypt.compare
+       │
+       └─► Mongoose ORM ──► MongoDB (users collection)
 
----
-
-### 📂 Folder Structure
-The components are modularly organized:
-```
-src/
-├── assets/           # Media parameters and icons
-├── components/       # Reusable components
-│   ├── Header.jsx    # Accepts "name" and "themeColor" and renders dynamic typing subtitles
-│   ├── NavBar.jsx    # Sticky navigation dock supporting routing highlights and theme switches
-│   ├── About.jsx     # Timelines and student profile parameters
-│   ├── Skills.jsx    # Categorized skill badges
-│   ├── AITerminal.jsx# Terminal simulator accepting terminal command directives
-│   └── Footer.jsx    # Premium copyright and social links footer
-├── pages/            # Core layout wrappers mapped to routes
-│   ├── Home.jsx      # Home layout composing About, AITerminal, and Skills
-│   ├── Projects.jsx  # Repository explorer fetching from Github API (Practical 3)
-│   ├── Contact.jsx   # Controlled communication form
-│   └── NotFound.jsx  # Custom 404 page
-├── api.js            # [NEW] Central API utility wrapper for backend tasks
-├── Task.jsx          # Original task wrapper (kept intact)
-├── Todo.jsx          # Full Stack Todo component (optimistic updates, toasts, loading/error states)
-├── App.jsx           # Coordinates parent hooks, layout routes, and cursor tracking
-├── main.jsx          # Entry point mounting Router context
-├── App.css           # Styling parameters (including Toast styles)
-└── index.css         # Customized core design system stylesheet
+PROTECTED TASK REQUEST
+React Frontend (localhost:5173)
+       │
+       │ Authorization: Bearer <token>
+       ▼
+Express Server (localhost:5000)
+       │
+       ├─► Global Request Logger (saves to CSV & MongoDB)
+       │
+       ├─► Auth Middleware (authenticateToken & jwt.verify)
+       │
+       ├─► Validation Middleware (validateTaskInput)
+       │
+       └─► Task Controller ──► Mongoose ORM ──► MongoDB (tasks collection)
 ```
 
 ---
 
 ### 🔌 REST API Endpoints
-The Express backend (`server.cjs`) exposes the following endpoints:
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| **GET** | `/tasks` | Retrieves all tasks from the MongoDB database |
-| **POST** | `/tasks` | Creates a new task in the database |
-| **PUT** | `/tasks/:id` | Updates a task's title by its MongoDB ObjectId |
-| **DELETE** | `/tasks/:id` | Deletes a task by its MongoDB ObjectId |
+#### Authentication Endpoints
+| Method | Endpoint | Protection | Description |
+| :--- | :--- | :--- | :--- |
+| **POST** | `/register` | Public | Registers a new user with bcrypt password hashing |
+| **POST** | `/login` | Public | Authenticates user credentials & returns JWT token |
+| **GET** | `/me` | Protected (JWT) | Returns current authenticated user profile (`_id`, `email`) |
 
----
-
-### ⚡ UX Fulfillments
-
-1. **Central API File (`src/api.js`)**: All fetch operations are central and point to a single base backend URL (`http://localhost:5000`).
-2. **Optimistic UI (Create)**: When adding a task, the UI updates instantly with a temporary task block. If the API request succeeds, it syncs with the database response; if it fails, it rolls back the changes and restores the text input so data is not lost.
-3. **Delete Confirmation Dialog**: Prompts the user before deleting a task to prevent accidental deletions.
-4. **Toast Notification System**: Shows dynamic success and error popups upon creating, updating, or deleting tasks.
-5. **Operation Guarding**: Inputs and buttons are disabled during active API requests to avoid duplicate submissions.
+#### Protected Task CRUD Endpoints
+| Method | Endpoint | Protection | Description |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/tasks` | Protected (JWT) | Retrieves all tasks from MongoDB |
+| **POST** | `/tasks` | Protected (JWT) | Creates a task after title validation |
+| **PUT** | `/tasks/:id` | Protected (JWT) | Updates a task after ID & title validation |
+| **DELETE** | `/tasks/:id` | Protected (JWT) | Deletes a task by MongoDB ObjectId |
 
 ---
 
-### 🚀 How to Run
+### 🛡️ Security & Validation Highlights
 
-#### Step 1: Start MongoDB
-Ensure MongoDB is running locally on port `27017`:
+1. **Password Hashing**: User passwords are never stored in plain text. Stored passwords in MongoDB `users` collection use `bcryptjs` salt rounds (10).
+2. **JWT Secret Management**: `JWT_SECRET` is safely read from `.env` on the server and is never committed to GitHub or exposed to the frontend.
+3. **Token Verification**: Auth middleware extracts `Authorization: Bearer <token>` and executes `jwt.verify()` inside a `try/catch` block to prevent server crashes on malformed or expired tokens.
+4. **Server-Side Validation**: Reject missing or empty task titles and invalid email/password inputs with `400 Bad Request` prior to database execution.
+5. **Frontend 401 Interception**: Intercepts `401 Unauthorized` responses, clears invalid client tokens from `localStorage`, displays a session expiry message, and redirects to `/login`.
+6. **Logging & CSV Persistence**: All incoming requests (including `/register`, `/login`, `/me`, `/tasks`) are automatically appended to `logs/requests.log.csv` and saved in MongoDB `requestLogs`.
+
+---
+
+### 🚀 Environment & Setup Instructions
+
+#### Step 1: Configure Environment Variables
+Create a `.env` file in the project root:
+```env
+MONGO_URI=mongodb://127.0.0.1:27017/todoDB
+JWT_SECRET=your_secure_jwt_secret_key_here
+```
+*(Note: `.env` is ignored in `.gitignore` and must NOT be committed.)*
+
+#### Step 2: Install Dependencies
 ```bash
-mongod --config /opt/homebrew/etc/mongod.conf
+npm install
 ```
 
-#### Step 2: Start Express Backend
+#### Step 3: Start MongoDB
+Ensure MongoDB is running locally on port `27017`:
+```bash
+mongod --dbpath <path-to-db> --port 27017
+```
+
+#### Step 4: Start Express Backend
 Run the backend server on port `5000`:
 ```bash
 node server.cjs
 ```
 
-#### Step 3: Start React Frontend
-In a separate terminal session, run the Vite development server on port `5173`:
+#### Step 5: Start React Frontend
+Run the Vite development server on port `5173`:
 ```bash
 npm run dev
 ```
 
 ---
 
-### 📦 Production Build
-To build the React application for production and ensure no compilation errors:
+### 📦 Production Build Verification
+To compile the frontend production bundle:
 ```bash
 npm run build
 ```

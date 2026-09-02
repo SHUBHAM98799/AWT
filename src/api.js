@@ -1,69 +1,167 @@
 const BASE_URL = 'http://localhost:5000';
 
 /**
- * GET - Fetch all tasks from MongoDB
+ * Token management helpers
  */
-export async function getTasks() {
-  const response = await fetch(`${BASE_URL}/tasks`);
-  if (!response.ok) {
-    const errText = await response.text().catch(() => '');
-    throw new Error(errText || `Failed to fetch tasks: ${response.status}`);
+export function getToken() {
+  return localStorage.getItem('jwt_token');
+}
+
+export function setToken(token) {
+  if (token) {
+    localStorage.setItem('jwt_token', token);
   }
+}
+
+export function removeToken() {
+  localStorage.removeItem('jwt_token');
+}
+
+/**
+ * Helper to build auth headers
+ */
+function getAuthHeaders(extraHeaders = {}) {
+  const token = getToken();
+  const headers = { ...extraHeaders };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+/**
+ * Handle API responses and detect 401 Unauthorized
+ */
+async function handleResponse(response) {
+  if (response.status === 401) {
+    removeToken();
+    const errorData = await response.json().catch(() => ({}));
+    const error = new Error(errorData.error || 'Authentication required');
+    error.status = 401;
+    throw error;
+  }
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const error = new Error(errorData.error || `Request failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
   return response.json();
 }
 
 /**
- * POST - Create a new task in MongoDB
+ * POST - Register new user
  */
-export async function createTask(title) {
-  const response = await fetch(`${BASE_URL}/tasks`, {
+export async function register(email, password) {
+  const response = await fetch(`${BASE_URL}/register`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ title: title.trim() })
+    body: JSON.stringify({ email: email.trim(), password: password.trim() })
   });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Failed to create task: ${response.status}`);
+    throw new Error(errorData.error || `Registration failed with status ${response.status}`);
   }
 
   return response.json();
 }
 
 /**
- * PUT - Update an existing task in MongoDB
+ * POST - Login user & store JWT token
+ */
+export async function login(email, password) {
+  const response = await fetch(`${BASE_URL}/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ email: email.trim(), password: password.trim() })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Invalid credentials');
+  }
+
+  const data = await response.json();
+  if (data.token) {
+    setToken(data.token);
+  }
+  return data;
+}
+
+/**
+ * GET - Fetch current user info (/me)
+ */
+export async function getMe() {
+  const response = await fetch(`${BASE_URL}/me`, {
+    headers: getAuthHeaders()
+  });
+
+  return handleResponse(response);
+}
+
+/**
+ * GET - Fetch all tasks from MongoDB (Protected)
+ */
+export async function getTasks() {
+  const response = await fetch(`${BASE_URL}/tasks`, {
+    headers: getAuthHeaders()
+  });
+
+  return handleResponse(response);
+}
+
+/**
+ * POST - Create a new task in MongoDB (Protected)
+ */
+export async function createTask(title) {
+  const response = await fetch(`${BASE_URL}/tasks`, {
+    method: 'POST',
+    headers: getAuthHeaders({
+      'Content-Type': 'application/json'
+    }),
+    body: JSON.stringify({ title: title.trim() })
+  });
+
+  return handleResponse(response);
+}
+
+/**
+ * PUT - Update an existing task in MongoDB (Protected)
  */
 export async function updateTask(id, title) {
   const response = await fetch(`${BASE_URL}/tasks/${id}`, {
     method: 'PUT',
-    headers: {
+    headers: getAuthHeaders({
       'Content-Type': 'application/json'
-    },
+    }),
     body: JSON.stringify({ title: title.trim() })
   });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Failed to update task: ${response.status}`);
-  }
-
-  return response.json();
+  return handleResponse(response);
 }
 
 /**
- * DELETE - Delete a task from MongoDB
+ * DELETE - Delete a task from MongoDB (Protected)
  */
 export async function deleteTask(id) {
   const response = await fetch(`${BASE_URL}/tasks/${id}`, {
-    method: 'DELETE'
+    method: 'DELETE',
+    headers: getAuthHeaders()
   });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Failed to delete task: ${response.status}`);
-  }
+  return handleResponse(response);
+}
 
-  return response.json();
+/**
+ * Logout helper
+ */
+export function logout() {
+  removeToken();
 }

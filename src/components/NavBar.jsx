@@ -15,6 +15,12 @@ export default function NavBar({ onToggleTheme, dark }) {
       <NavLink to="/todo" className={({ isActive }) => isActive ? 'active' : undefined}>
         Todo
       </NavLink>
+      <NavLink to="/login" className={({ isActive }) => isActive ? 'active' : undefined}>
+        Login
+      </NavLink>
+      <NavLink to="/register" className={({ isActive }) => isActive ? 'active' : undefined}>
+        Register
+      </NavLink>
       <div style={{ marginLeft: '1rem', borderLeft: '1px solid var(--surface-border)', paddingLeft: '1rem', display: 'flex', alignItems: 'center' }}>
         <button className="btn" onClick={onToggleTheme} aria-label="Toggle Theme">
           {dark ? (

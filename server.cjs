@@ -3,6 +3,8 @@ const cors = require('cors')
 const fs = require('fs')
 const path = require('path')
 const mongoose = require('mongoose')
+const bcrypt = require('bcryptjs')
+const jwt = require('jsonwebtoken')
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -43,6 +45,26 @@ mongoose.connect(MONGO_URI)
   })
 
 // ─── MONGOOSE SCHEMAS & MODELS ───
+
+// User Model for Practical 7 Authentication
+const userSchema = new mongoose.Schema({
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    lowercase: true
+  },
+  password: {
+    type: String,
+    required: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+})
+const User = mongoose.model('User', userSchema, 'users')
 
 // Task Model
 const taskSchema = new mongoose.Schema({
@@ -151,6 +173,29 @@ app.use((req, res, next) => {
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
+// ─── VALIDATION & AUTHENTICATION MIDDLEWARES ───
+
+// Validation middleware for Auth (register/login)
+const validateAuthInput = (req, res, next) => {
+  const { email, password } = req.body || {}
+  if (!email || typeof email !== 'string' || !email.trim()) {
+    return res.status(400).json({ error: 'Email is required' })
+  }
+  if (!password || typeof password !== 'string' || !password.trim()) {
+    return res.status(400).json({ error: 'Password is required' })
+  }
+  next()
+}
+
+// Validation middleware for Task creation/update
+const validateTaskInput = (req, res, next) => {
+  const { title } = req.body || {}
+  if (!title || typeof title !== 'string' || !title.trim()) {
+    return res.status(400).json({ error: 'Task title is required' })
+  }
+  next()
+}
+
 // Route-specific middleware: Validate Task ID format for MongoDB ObjectId
 const validateTaskId = (req, res, next) => {
   const { id } = req.params
@@ -160,10 +205,116 @@ const validateTaskId = (req, res, next) => {
   next()
 }
 
-// ─── CRUD Endpoints ───
+// JWT Authentication Middleware
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'] || req.headers['Authorization']
+  const token = authHeader && authHeader.split(' ')[1]
 
-// GET /tasks - Return all tasks from MongoDB
-app.get('/tasks', async (req, res, next) => {
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET)
+    req.user = decoded
+    next()
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+}
+
+// ─── AUTHENTICATION ENDPOINTS ───
+
+// POST /register - Register a new user with bcrypt password hash
+app.post('/register', validateAuthInput, async (req, res, next) => {
+  try {
+    const { email, password } = req.body
+    const normalizedEmail = email.trim().toLowerCase()
+
+    const existingUser = await User.findOne({ email: normalizedEmail })
+    if (existingUser) {
+      return res.status(400).json({ error: 'User already exists with this email' })
+    }
+
+    const hashedPassword = await bcrypt.hash(password.trim(), 10)
+    const newUser = new User({
+      email: normalizedEmail,
+      password: hashedPassword
+    })
+
+    await newUser.save()
+    res.status(201).json({
+      message: 'User registered successfully',
+      user: {
+        _id: newUser._id,
+        email: newUser.email
+      }
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// POST /login - Authenticate user & return JWT token
+app.post('/login', validateAuthInput, async (req, res, next) => {
+  try {
+    const { email, password } = req.body
+    const normalizedEmail = email.trim().toLowerCase()
+
+    const user = await User.findOne({ email: normalizedEmail })
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' })
+    }
+
+    const isMatch = await bcrypt.compare(password.trim(), user.password)
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid credentials' })
+    }
+
+    const secret = process.env.JWT_SECRET
+    if (!secret) {
+      return res.status(500).json({ error: 'JWT_SECRET is not configured' })
+    }
+
+    const token = jwt.sign(
+      { id: user._id, email: user.email },
+      secret,
+      { expiresIn: '1h' }
+    )
+
+    res.status(200).json({
+      message: 'Login successful',
+      token,
+      user: {
+        _id: user._id,
+        email: user.email
+      }
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// GET /me - Return authenticated user details (protected)
+app.get('/me', authenticateToken, async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password')
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+    res.status(200).json({
+      _id: user._id,
+      email: user.email
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─── PROTECTED TASK CRUD Endpoints ───
+
+// GET /tasks - Return all tasks from MongoDB (protected)
+app.get('/tasks', authenticateToken, async (req, res, next) => {
   try {
     const tasks = await Task.find().sort({ createdAt: 1 })
     res.status(200).json(tasks)
@@ -172,14 +323,10 @@ app.get('/tasks', async (req, res, next) => {
   }
 })
 
-// POST /tasks - Create a new task in MongoDB
-app.post('/tasks', async (req, res, next) => {
+// POST /tasks - Create a new task in MongoDB (protected)
+app.post('/tasks', authenticateToken, validateTaskInput, async (req, res, next) => {
   try {
     const { title } = req.body
-
-    if (!title || typeof title !== 'string' || !title.trim()) {
-      return res.status(400).json({ error: 'Task title is required.' })
-    }
 
     const newTask = new Task({
       title: title.trim()
@@ -192,15 +339,11 @@ app.post('/tasks', async (req, res, next) => {
   }
 })
 
-// PUT /tasks/:id - Update an existing task in MongoDB using ObjectId
-app.put('/tasks/:id', validateTaskId, async (req, res, next) => {
+// PUT /tasks/:id - Update an existing task in MongoDB using ObjectId (protected)
+app.put('/tasks/:id', authenticateToken, validateTaskId, validateTaskInput, async (req, res, next) => {
   try {
     const { id } = req.params
     const { title } = req.body
-
-    if (!title || typeof title !== 'string' || !title.trim()) {
-      return res.status(400).json({ error: 'Task title is required.' })
-    }
 
     const updatedTask = await Task.findByIdAndUpdate(
       id,
@@ -218,8 +361,8 @@ app.put('/tasks/:id', validateTaskId, async (req, res, next) => {
   }
 })
 
-// DELETE /tasks/:id - Delete a task from MongoDB using ObjectId
-app.delete('/tasks/:id', validateTaskId, async (req, res, next) => {
+// DELETE /tasks/:id - Delete a task from MongoDB using ObjectId (protected)
+app.delete('/tasks/:id', authenticateToken, validateTaskId, async (req, res, next) => {
   try {
     const { id } = req.params
     const deletedTask = await Task.findByIdAndDelete(id)
