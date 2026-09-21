@@ -10,7 +10,17 @@ import Todo from './Todo'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import NotFound from './pages/NotFound'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { getToken } from './api'
+
+// Protected Route Component for Practical 7
+function ProtectedRoute({ children }) {
+  const token = getToken()
+  if (!token) {
+    return <Navigate to="/login" replace />
+  }
+  return children
+}
 
 function App() {
   const [dark, setDark] = useState(true)
@@ -57,7 +67,11 @@ function App() {
             <Route path="/contact" element={<Contact />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/todo" element={<Todo />} />
+            <Route path="/todo" element={
+              <ProtectedRoute>
+                <Todo />
+              </ProtectedRoute>
+            } />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>

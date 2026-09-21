@@ -2,11 +2,16 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { getTasks, createTask, updateTask, deleteTask, getMe, getToken, logout } from './api'
 
-// Practical 7 - Authenticated & Validated CRUD actions with JWT
+// Practical 8 - Task Status Board Component
 export default function Todo() {
   const [tasks, setTasks] = useState([])
   const [newTitle, setNewTitle] = useState('')
+  
+  // Edit state for both title and status
   const [editingTaskId, setEditingTaskId] = useState(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editStatus, setEditStatus] = useState('pending')
+
   const [user, setUser] = useState(null)
   
   // Loading & Connection Error States
@@ -35,10 +40,7 @@ export default function Todo() {
   // Handle 401 response: clear token, inform user, redirect to login
   const handle401Error = () => {
     logout()
-    showToast('Session expired. Please login again.', 'error')
-    setTimeout(() => {
-      navigate('/login')
-    }, 1000)
+    navigate('/login', { replace: true, state: { message: 'Session expired. Please login again.' } })
   }
 
   // Check auth and fetch user details & tasks
@@ -57,7 +59,7 @@ export default function Todo() {
       const userData = await getMe()
       setUser(userData)
 
-      // Fetch tasks
+      // Fetch tasks from MongoDB
       const data = await getTasks()
       setTasks(data)
     } catch (err) {
@@ -89,10 +91,9 @@ export default function Todo() {
     navigate('/login')
   }
 
-  // Add a task with Optimistic UI (POST)
+  // Add a task with Optimistic UI (POST) - Default status: pending
   const handleAddTask = async (e) => {
     if (e) e.preventDefault()
-    if (editingTaskId) return // Safety: do not POST when in edit mode
 
     const titleToAdd = newTitle.trim()
     if (!titleToAdd) return
@@ -104,21 +105,22 @@ export default function Todo() {
     const tempTask = {
       _id: tempId,
       title: titleToAdd,
+      status: 'pending',
       createdAt: new Date().toISOString(),
       isOptimistic: true
     }
 
-    // Optimistically update UI list
+    // Optimistically update main task list
     setTasks((prev) => [...prev, tempTask])
     setNewTitle('')
 
     try {
-      const createdTask = await createTask(titleToAdd)
+      const createdTask = await createTask(titleToAdd, 'pending')
       // Replace optimistic task with actual DB task
       setTasks((prev) =>
         prev.map((t) => (t._id === tempId ? createdTask : t))
       )
-      showToast('Task created successfully.', 'success')
+      showToast('Task created successfully in Pending status.', 'success')
     } catch (err) {
       console.error(err)
       // Revert optimistic update
@@ -136,24 +138,38 @@ export default function Todo() {
     }
   }
 
-  // Update a task (PUT)
-  const handleUpdateTask = async (e) => {
-    if (e) e.preventDefault()
-    const id = editingTaskId
-    const titleToUpdate = newTitle.trim()
-    if (!id || !titleToUpdate) return
+  // Start editing a task
+  const startEdit = (task) => {
+    setEditingTaskId(task._id)
+    setEditTitle(task.title)
+    setEditStatus(task.status || 'pending')
+  }
 
-    // Show a confirmation dialog before sending PUT
+  const cancelEdit = () => {
+    setEditingTaskId(null)
+    setEditTitle('')
+    setEditStatus('pending')
+  }
+
+  // Update a task (PUT) - Updates title & status
+  const handleUpdateTask = async (e, id) => {
+    if (e) e.preventDefault()
+    const targetId = id || editingTaskId
+    const titleToUpdate = editTitle.trim()
+    
+    if (!targetId || !titleToUpdate) return
+
+    // Confirmation dialog before updating
     const confirmUpdate = window.confirm('Are you sure you want to update this task?')
     if (!confirmUpdate) {
-      cancelEdit()
       return
     }
 
-    setLoadingUpdateId(id)
+    setLoadingUpdateId(targetId)
     try {
-      const updated = await updateTask(id, titleToUpdate)
-      setTasks((prev) => prev.map((t) => (t._id === id ? updated : t)))
+      const updated = await updateTask(targetId, titleToUpdate, editStatus)
+      // Update main tasks state -> derived columns recalculate automatically!
+      setTasks((prev) => prev.map((t) => (t._id === targetId ? updated : t)))
       cancelEdit()
       showToast('Task updated successfully.', 'success')
     } catch (err) {
@@ -194,17 +210,12 @@ export default function Todo() {
     }
   }
 
-  const startEdit = (task) => {
-    setEditingTaskId(task._id)
-    setNewTitle(task.title)
-  }
+  const isPendingState = loadingAdd || loadingUpdateId !== null || loadingDeleteId !== null
 
-  const cancelEdit = () => {
-    setEditingTaskId(null)
-    setNewTitle('')
-  }
-
-  const isPending = loadingAdd || loadingUpdateId !== null || loadingDeleteId !== null
+  // Single Source of Truth: derive the 3 status section arrays
+  const pendingTasks = tasks.filter((t) => (t.status || 'pending') === 'pending')
+  const ongoingTasks = tasks.filter((t) => t.status === 'ongoing')
+  const completedTasks = tasks.filter((t) => t.status === 'completed')
 
   if (!getToken()) {
     return (
@@ -220,6 +231,109 @@ export default function Todo() {
     )
   }
 
+  // Helper to render individual Task Cards
+  const renderTaskCard = (task) => {
+    const isEditing = editingTaskId === task._id
+    const currentStatus = task.status || 'pending'
+
+    if (isEditing) {
+      return (
+        <div key={task._id} className="status-task-card editing-card">
+          <form onSubmit={(e) => handleUpdateTask(e, task._id)} className="task-edit-form">
+            <div className="form-group">
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-h)' }}>Task Title:</label>
+              <input
+                type="text"
+                className="form-control todo-edit-input"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                required
+                disabled={loadingUpdateId === task._id}
+              />
+            </div>
+            <div className="form-group" style={{ marginTop: '0.5rem' }}>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-h)' }}>Status:</label>
+              <select
+                className="form-control todo-edit-select"
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value)}
+                disabled={loadingUpdateId === task._id}
+              >
+                <option value="pending">🟡 Pending</option>
+                <option value="ongoing">🔵 Ongoing</option>
+                <option value="completed">🟢 Completed</option>
+              </select>
+            </div>
+            <div className="task-edit-actions" style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+              <button
+                type="submit"
+                className="btn btn-primary todo-btn-save"
+                disabled={loadingUpdateId === task._id || !editTitle.trim()}
+              >
+                {loadingUpdateId === task._id ? 'Updating...' : 'Update Task'}
+              </button>
+              <button
+                type="button"
+                className="btn todo-btn-cancel"
+                onClick={cancelEdit}
+                disabled={loadingUpdateId === task._id}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )
+    }
+
+    return (
+      <div 
+        key={task._id} 
+        className={`status-task-card card-${currentStatus}`}
+        style={{ opacity: task.isOptimistic ? 0.7 : 1 }}
+      >
+        <div className="task-card-header">
+          <h4 className={`task-card-title ${currentStatus === 'completed' ? 'title-completed' : ''}`}>
+            {task.title} {task.isOptimistic && ' (Syncing...)'}
+          </h4>
+        </div>
+        
+        <div className="task-card-badge-row">
+          {currentStatus === 'pending' && <span className="status-badge badge-pending">🟡 Pending</span>}
+          {currentStatus === 'ongoing' && <span className="status-badge badge-ongoing">🔵 Ongoing</span>}
+          {currentStatus === 'completed' && <span className="status-badge badge-completed">🟢 Completed</span>}
+        </div>
+
+        <div className="task-card-actions">
+          <button 
+            className="btn todo-btn-edit" 
+            onClick={() => startEdit(task)}
+            disabled={isPendingState || task.isOptimistic}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            Edit
+          </button>
+          <button 
+            className="btn todo-btn-delete" 
+            onClick={() => handleDeleteTask(task._id)}
+            disabled={isPendingState || task.isOptimistic}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              <line x1="10" y1="11" x2="10" y2="17" />
+              <line x1="14" y1="11" x2="14" y2="17" />
+            </svg>
+            {loadingDeleteId === task._id ? 'Deleting...' : 'Delete'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <section>
       {/* ─── Header Auth Status Banner ─── */}
@@ -227,10 +341,10 @@ export default function Todo() {
         className="project-card" 
         style={{ 
           display: 'flex', 
-          justify: 'space-between', 
+          justifyContent: 'space-between', 
           alignItems: 'center', 
           padding: '0.8rem 1.2rem', 
-          marginBottom: '1.5rem',
+          marginBottom: '1rem',
           borderColor: 'var(--surface-border)'
         }}
       >
@@ -248,62 +362,38 @@ export default function Todo() {
         </button>
       </div>
 
-      <h2>// SYSTEM TASKS & TODO CORE (AUTHENTICATED)</h2>
-      <p className="about-text" style={{ fontSize: '0.95rem', color: 'var(--muted)' }}>
-        Manage real-time tasks using Express REST API backend with JWT Authorization middleware.
-      </p>
+      <div className="status-board-header">
+        <h2>// TASK MANAGEMENT BOARD</h2>
+        <p className="about-text" style={{ fontSize: '0.95rem', color: 'var(--muted)', marginBottom: '1.25rem' }}>
+          Real-time Task Status Board powered by Express & MongoDB. Tasks are segregated automatically across three status columns.
+        </p>
+      </div>
 
-      {/* ─── Add / Edit Task Form ─── */}
-      <form onSubmit={editingTaskId ? handleUpdateTask : handleAddTask} className="todo-form" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {editingTaskId && (
-          <div className="editing-indicator" style={{ color: 'var(--accent)', fontSize: '0.85rem', fontWeight: 'bold' }}>
-            Protocol Edit Active: Modifying selected task title
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-          <input
-            type="text"
-            className="form-control todo-input"
-            placeholder={
-              loadingAdd || loadingUpdateId 
-                ? "Processing..." 
-                : editingTaskId 
-                  ? "Update task title..." 
-                  : "Initiate new protocol / task title..."
-            }
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            disabled={loadingGet || isPending}
-            style={{ flexGrow: 1 }}
-          />
-          <button 
-            type="submit" 
-            className="btn btn-primary todo-add-btn" 
-            disabled={loadingGet || isPending || !newTitle.trim()}
-          >
-            {editingTaskId 
-              ? (loadingUpdateId ? 'Updating...' : 'Update Task') 
-              : (loadingAdd ? 'Adding...' : 'Add Task')
-            }
-          </button>
-          {editingTaskId && (
-            <button 
-              type="button" 
-              className="btn todo-btn-cancel" 
-              onClick={cancelEdit}
-              disabled={isPending}
-            >
-              Cancel Edit
-            </button>
-          )}
-        </div>
+      {/* ─── Add Task Form (Creates task in default status: pending) ─── */}
+      <form onSubmit={handleAddTask} className="todo-form" style={{ marginBottom: '2rem' }}>
+        <input
+          type="text"
+          className="form-control todo-input"
+          placeholder={loadingAdd ? "Creating task..." : "Create new task title (defaults to Pending)..."}
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          disabled={loadingGet || isPendingState}
+          style={{ flexGrow: 1 }}
+        />
+        <button 
+          type="submit" 
+          className="btn btn-primary todo-add-btn" 
+          disabled={loadingGet || isPendingState || !newTitle.trim()}
+        >
+          {loadingAdd ? 'Adding...' : '+ Create Task'}
+        </button>
       </form>
 
-      {/* ─── Initial Loading State ─── */}
+      {/* ─── Loading State ─── */}
       {loadingGet && (
         <div className="github-status">
           <div className="loading-spinner" />
-          <p>Loading tasks...</p>
+          <p>Loading tasks from MongoDB...</p>
         </div>
       )}
 
@@ -322,64 +412,58 @@ export default function Todo() {
         </div>
       )}
 
-      {/* ─── Task List Grid ─── */}
+      {/* ─── 3-SECTION STATUS BOARD (ALL VISIBLE SIMULTANEOUSLY) ─── */}
       {!loadingGet && !errorGet && (
-        <div className="todo-results">
-          {tasks.length === 0 ? (
-            <div className="github-status github-empty">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
-                <circle cx="12" cy="12" r="10" />
-                <line x1="8" y1="12" x2="16" y2="12" />
-              </svg>
-              <p>No active tasks in system database.</p>
+        <div className="status-board-grid">
+          
+          {/* SECTION 1: PENDING */}
+          <div className="status-column column-pending">
+            <div className="column-header header-pending">
+              <span className="status-dot dot-pending">🟡</span>
+              <span className="column-title">PENDING</span>
+              <span className="column-count count-pending">({pendingTasks.length})</span>
             </div>
-          ) : (
-            <ul className="todo-grid">
-              {tasks.map((task) => (
-                <li 
-                  key={task._id} 
-                  className="project-card todo-card" 
-                  style={{ 
-                    opacity: task.isOptimistic ? 0.7 : 1,
-                    border: editingTaskId === task._id ? '1px solid var(--accent)' : '1px solid var(--border)' 
-                  }}
-                >
-                  <div className="todo-display-panel">
-                    <span className="todo-task-title" style={{ fontStyle: task.isOptimistic ? 'italic' : 'normal' }}>
-                      {task.title} {task.isOptimistic && ' (Syncing...)'}
-                      {editingTaskId === task._id && ' (Editing)'}
-                    </span>
-                    <div className="todo-actions">
-                      <button 
-                        className="btn todo-btn-edit" 
-                        onClick={() => startEdit(task)}
-                        disabled={isPending || task.isOptimistic}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                          <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                        </svg>
-                        Edit
-                      </button>
-                      <button 
-                        className="btn todo-btn-delete" 
-                        onClick={() => handleDeleteTask(task._id)}
-                        disabled={isPending || task.isOptimistic}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                          <line x1="10" y1="11" x2="10" y2="17" />
-                          <line x1="14" y1="11" x2="14" y2="17" />
-                        </svg>
-                        {loadingDeleteId === task._id ? 'Deleting...' : 'Delete'}
-                      </button>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+            <div className="column-cards-container">
+              {pendingTasks.length === 0 ? (
+                <div className="empty-column-msg">No pending tasks</div>
+              ) : (
+                pendingTasks.map((t) => renderTaskCard(t))
+              )}
+            </div>
+          </div>
+
+          {/* SECTION 2: ONGOING */}
+          <div className="status-column column-ongoing">
+            <div className="column-header header-ongoing">
+              <span className="status-dot dot-ongoing">🔵</span>
+              <span className="column-title">ONGOING</span>
+              <span className="column-count count-ongoing">({ongoingTasks.length})</span>
+            </div>
+            <div className="column-cards-container">
+              {ongoingTasks.length === 0 ? (
+                <div className="empty-column-msg">No ongoing tasks</div>
+              ) : (
+                ongoingTasks.map((t) => renderTaskCard(t))
+              )}
+            </div>
+          </div>
+
+          {/* SECTION 3: COMPLETED */}
+          <div className="status-column column-completed">
+            <div className="column-header header-completed">
+              <span className="status-dot dot-completed">🟢</span>
+              <span className="column-title">COMPLETED</span>
+              <span className="column-count count-completed">({completedTasks.length})</span>
+            </div>
+            <div className="column-cards-container">
+              {completedTasks.length === 0 ? (
+                <div className="empty-column-msg">No completed tasks</div>
+              ) : (
+                completedTasks.map((t) => renderTaskCard(t))
+              )}
+            </div>
+          </div>
+
         </div>
       )}
 

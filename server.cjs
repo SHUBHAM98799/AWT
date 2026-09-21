@@ -66,12 +66,19 @@ const userSchema = new mongoose.Schema({
 })
 const User = mongoose.model('User', userSchema, 'users')
 
-// Task Model
+// Task Model with Practical 8 Status field
+const VALID_STATUSES = ['pending', 'ongoing', 'completed']
+
 const taskSchema = new mongoose.Schema({
   title: {
     type: String,
     required: true,
     trim: true
+  },
+  status: {
+    type: String,
+    enum: VALID_STATUSES,
+    default: 'pending'
   },
   createdAt: {
     type: Date,
@@ -189,9 +196,21 @@ const validateAuthInput = (req, res, next) => {
 
 // Validation middleware for Task creation/update
 const validateTaskInput = (req, res, next) => {
-  const { title } = req.body || {}
-  if (!title || typeof title !== 'string' || !title.trim()) {
-    return res.status(400).json({ error: 'Task title is required' })
+  const { title, status } = req.body || {}
+  if (req.method === 'POST') {
+    if (!title || typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({ error: 'Task title is required' })
+    }
+  }
+  if (req.method === 'PUT') {
+    if (title !== undefined && (typeof title !== 'string' || !title.trim())) {
+      return res.status(400).json({ error: 'Task title cannot be empty' })
+    }
+  }
+  if (status !== undefined) {
+    if (typeof status !== 'string' || !VALID_STATUSES.includes(status.trim().toLowerCase())) {
+      return res.status(400).json({ error: 'Invalid status. Must be pending, ongoing, or completed' })
+    }
   }
   next()
 }
@@ -326,12 +345,13 @@ app.get('/tasks', authenticateToken, async (req, res, next) => {
 // POST /tasks - Create a new task in MongoDB (protected)
 app.post('/tasks', authenticateToken, validateTaskInput, async (req, res, next) => {
   try {
-    const { title } = req.body
+    const { title, status } = req.body
+    const taskData = { title: title.trim() }
+    if (status) {
+      taskData.status = status.trim().toLowerCase()
+    }
 
-    const newTask = new Task({
-      title: title.trim()
-    })
-
+    const newTask = new Task(taskData)
     await newTask.save()
     res.status(201).json(newTask)
   } catch (err) {
@@ -343,12 +363,24 @@ app.post('/tasks', authenticateToken, validateTaskInput, async (req, res, next) 
 app.put('/tasks/:id', authenticateToken, validateTaskId, validateTaskInput, async (req, res, next) => {
   try {
     const { id } = req.params
-    const { title } = req.body
+    const { title, status } = req.body
+
+    const updateData = {}
+    if (title !== undefined && title.trim() !== '') {
+      updateData.title = title.trim()
+    }
+    if (status !== undefined) {
+      updateData.status = status.trim().toLowerCase()
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided to update' })
+    }
 
     const updatedTask = await Task.findByIdAndUpdate(
       id,
-      { title: title.trim() },
-      { new: true }
+      updateData,
+      { new: true, runValidators: true }
     )
 
     if (!updatedTask) {
