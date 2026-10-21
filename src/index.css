@@ -5,7 +5,7 @@
   --surface-border: rgba(255, 255, 255, 0.06);
   --text: #94a3b8;
   --text-h: #f8fafc;
-  --muted: #64748b;
+  --muted: #94a3b8;
   --accent: #06b6d4; /* Neon Cyan */
   --accent-secondary: #a855f7; /* Electric Purple */
   --accent-success: #10b981; /* Matrix Green */
@@ -26,7 +26,7 @@
   --surface-border: rgba(15, 23, 42, 0.08);
   --text: #475569;
   --text-h: #0f172a;
-  --muted: #94a3b8;
+  --muted: #475569;
   --accent: #0284c7; /* Sky Blue */
   --accent-secondary: #7c3aed; /* Purple */
   --accent-success: #059669; /* Emerald Green */
@@ -128,6 +128,8 @@ body {
   top: -10%;
   left: -10%;
   animation: floatOrb 25s infinite alternate ease-in-out;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
 }
 
 .orb-2 {
@@ -137,6 +139,8 @@ body {
   bottom: -10%;
   right: -10%;
   animation: floatOrb 20s infinite alternate-reverse ease-in-out;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
 }
 
 /* Interactive Cursor Glow */
@@ -242,6 +246,7 @@ body {
   height: 1.2em;
   background-color: var(--accent);
   animation: blink 1s step-end infinite;
+  will-change: opacity;
 }
 
 /* Navigation Dock style */
@@ -850,19 +855,19 @@ textarea.form-control {
 /* Keyframes */
 @keyframes floatOrb {
   0% {
-    transform: translate(0, 0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1);
   }
   50% {
-    transform: translate(80px, -50px) scale(1.1);
+    transform: translate3d(80px, -50px, 0) scale(1.1);
   }
   100% {
-    transform: translate(-50px, 60px) scale(0.95);
+    transform: translate3d(-50px, 60px, 0) scale(0.95);
   }
 }
 
 @keyframes blink {
-  from, to { background-color: transparent }
-  50% { background-color: var(--accent) }
+  from, to { opacity: 0; }
+  50% { opacity: 1; }
 }
 
 @keyframes pageFadeIn {
@@ -1679,6 +1684,22 @@ textarea.form-control {
 @media (max-width: 868px) {
   .status-board-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Accessibility: Respect user motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .aurora-orb,
+  .typing-cursor {
+    animation: none !important;
   }
 }
 

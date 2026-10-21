@@ -78,7 +78,9 @@ export default function Login() {
           </label>
           <input
             id="login-email"
+            name="email"
             type="email"
+            autoComplete="email"
             className="form-control todo-input"
             placeholder="student@example.com"
             value={email}
@@ -94,7 +96,9 @@ export default function Login() {
           </label>
           <input
             id="login-password"
+            name="password"
             type="password"
+            autoComplete="current-password"
             className="form-control todo-input"
             placeholder="••••••••"
             value={password}

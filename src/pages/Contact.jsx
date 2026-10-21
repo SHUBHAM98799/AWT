@@ -27,6 +27,8 @@ export default function Contact() {
           <input
             type="text"
             id="name"
+            name="name"
+            autoComplete="name"
             className="form-control"
             placeholder="Identity e.g. John Doe"
             required
@@ -40,6 +42,8 @@ export default function Contact() {
           <input
             type="email"
             id="email"
+            name="email"
+            autoComplete="email"
             className="form-control"
             placeholder="Mail e.g. user@network.com"
             required
@@ -52,6 +56,7 @@ export default function Contact() {
           <label htmlFor="message">System: Payload Data</label>
           <textarea
             id="message"
+            name="message"
             className="form-control"
             rows={5}
             placeholder="Type your message payload..."

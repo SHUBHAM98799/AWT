@@ -1,17 +1,19 @@
 import './App.css'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import Header from './components/Header'
 import Footer from './components/Footer'
 import NavBar from './components/NavBar'
 import Home from './pages/Home'
-import Projects from './pages/Projects'
-import Contact from './pages/Contact'
-import Todo from './Todo'
-import Login from './pages/Login'
-import Register from './pages/Register'
-import NotFound from './pages/NotFound'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { getToken } from './api'
+
+// Lazy load non-critical routes to shrink initial bundle
+const Projects = lazy(() => import('./pages/Projects'))
+const Contact = lazy(() => import('./pages/Contact'))
+const Todo = lazy(() => import('./Todo'))
+const Login = lazy(() => import('./pages/Login'))
+const Register = lazy(() => import('./pages/Register'))
+const NotFound = lazy(() => import('./pages/NotFound'))
 
 // Protected Route Component for Practical 7
 function ProtectedRoute({ children }) {
@@ -20,6 +22,14 @@ function ProtectedRoute({ children }) {
     return <Navigate to="/login" replace />
   }
   return children
+}
+
+function PageFallback() {
+  return (
+    <div style={{ minHeight: '350px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="loading-spinner" />
+    </div>
+  )
 }
 
 function App() {
@@ -36,14 +46,27 @@ function App() {
     tools: ['Git', 'GitHub', 'AWS EC2', 'Vercel']
   }
 
-  // Track mouse coordinates for interactive glow effect
+  // Optimized mouse coordinates tracking using requestAnimationFrame throttling
   useEffect(() => {
-    const handleMouseMove = (e) => {
-      document.documentElement.style.setProperty('--mouse-x', `${e.clientX}px`)
-      document.documentElement.style.setProperty('--mouse-y', `${e.clientY}px`)
+    // Skip if user prefers reduced motion
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return
     }
-    window.addEventListener('mousemove', handleMouseMove)
-    return () => window.removeEventListener('mousemove', handleMouseMove)
+
+    let rafId = null
+    const handleMouseMove = (e) => {
+      if (rafId) return
+      rafId = requestAnimationFrame(() => {
+        document.documentElement.style.setProperty('--mouse-x', `${e.clientX}px`)
+        document.documentElement.style.setProperty('--mouse-y', `${e.clientY}px`)
+        rafId = null
+      })
+    }
+    window.addEventListener('mousemove', handleMouseMove, { passive: true })
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      if (rafId) cancelAnimationFrame(rafId)
+    }
   }, [])
 
   return (
@@ -61,19 +84,21 @@ function App() {
         <NavBar onToggleTheme={() => setDark(d => !d)} dark={dark} />
 
         <main>
-          <Routes>
-            <Route path="/" element={<Home name={name} role={role} skills={skills} />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/contact" element={<Contact />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/todo" element={
-              <ProtectedRoute>
-                <Todo />
-              </ProtectedRoute>
-            } />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <Suspense fallback={<PageFallback />}>
+            <Routes>
+              <Route path="/" element={<Home name={name} role={role} skills={skills} />} />
+              <Route path="/projects" element={<Projects />} />
+              <Route path="/contact" element={<Contact />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/todo" element={
+                <ProtectedRoute>
+                  <Todo />
+                </ProtectedRoute>
+              } />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
         </main>
 
         <Footer />

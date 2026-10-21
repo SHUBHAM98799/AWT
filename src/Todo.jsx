@@ -244,6 +244,9 @@ export default function Todo() {
               <label style={{ fontSize: '0.8rem', color: 'var(--text-h)' }}>Task Title:</label>
               <input
                 type="text"
+                id={`edit-task-title-${task._id}`}
+                name="task-title"
+                aria-label="Edit task title"
                 className="form-control todo-edit-input"
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
@@ -373,6 +376,9 @@ export default function Todo() {
       <form onSubmit={handleAddTask} className="todo-form" style={{ marginBottom: '2rem' }}>
         <input
           type="text"
+          id="new-task-title"
+          name="new-task-title"
+          aria-label="New task title"
           className="form-control todo-input"
           placeholder={loadingAdd ? "Creating task..." : "Create new task title (defaults to Pending)..."}
           value={newTitle}

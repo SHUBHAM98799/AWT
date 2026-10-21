@@ -107,6 +107,9 @@ export default function AITerminal() {
           <input 
             type="text" 
             className="terminal-input-el" 
+            id="terminal-input"
+            name="terminal-command"
+            aria-label="Terminal command directive input"
             value={inputVal}
             onChange={(e) => setInputVal(e.target.value)}
             placeholder="Type /help or click below..."

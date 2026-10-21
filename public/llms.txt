@@ -1,0 +1,14 @@
+# Shubham Dholakiya Portfolio
+
+> Full-stack engineering, AI/ML student at CHARUSAT, building autonomous SaaS applications and intelligent systems.
+
+## Core Navigation
+
+- [Home](http://localhost:5173/): System summary, mission statement, personal parameters, and technical skills.
+- [Projects](http://localhost:5173/projects): Live GitHub repository explorer with real-time API sync and search.
+- [Contact](http://localhost:5173/contact): Secure socket communication transmission payload form.
+- [Todo Board](http://localhost:5173/todo): Full-stack task management board with MongoDB persistence and JWT security.
+
+## Optional
+
+- [GitHub Profile](https://github.com/SHUBHAM98799): Primary source code repository and active contributions.

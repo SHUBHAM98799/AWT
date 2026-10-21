@@ -82,7 +82,9 @@ export default function Register() {
           </label>
           <input
             id="reg-email"
+            name="email"
             type="email"
+            autoComplete="email"
             className="form-control todo-input"
             placeholder="student@example.com"
             value={email}
@@ -98,7 +100,9 @@ export default function Register() {
           </label>
           <input
             id="reg-password"
+            name="password"
             type="password"
+            autoComplete="new-password"
             className="form-control todo-input"
             placeholder="••••••••"
             value={password}
@@ -114,7 +118,9 @@ export default function Register() {
           </label>
           <input
             id="reg-confirm-password"
+            name="confirmPassword"
             type="password"
+            autoComplete="new-password"
             className="form-control todo-input"
             placeholder="••••••••"
             value={confirmPassword}
