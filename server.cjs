@@ -5,6 +5,22 @@ const path = require('path')
 const mongoose = require('mongoose')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
+const NodeCache = require('node-cache')
+
+// ─── IN-MEMORY CACHE (Practical 9) ───
+// TTL: 60 seconds, check for expired keys every 120 seconds
+const cache = new NodeCache({ stdTTL: 60, checkperiod: 120 })
+
+// Cache hit/miss statistics counters
+const cacheStats = {
+  hits: 0,
+  misses: 0,
+  get lookups() { return this.hits + this.misses },
+  get hitRatio() {
+    const total = this.hits + this.misses
+    return total === 0 ? 0 : parseFloat((this.hits / total).toFixed(4))
+  }
+}
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -332,17 +348,63 @@ app.get('/me', authenticateToken, async (req, res, next) => {
 
 // ─── PROTECTED TASK CRUD Endpoints ───
 
-// GET /tasks - Return all tasks from MongoDB (protected)
+// GET /tasks - Return all tasks from MongoDB with in-memory caching (Practical 9)
 app.get('/tasks', authenticateToken, async (req, res, next) => {
   try {
+    const bypassCache = req.query.noCache === 'true' || req.headers['cache-control'] === 'no-cache'
+    const cacheKey = 'all_tasks'
+    const cached = bypassCache ? undefined : cache.get(cacheKey)
+
+    if (cached !== undefined) {
+      // Cache HIT — return cached tasks without a DB query
+      cacheStats.hits++
+      res.setHeader('X-Cache', 'HIT')
+      res.setHeader('X-Cache-TTL-Remaining', cache.getTtl(cacheKey) - Date.now())
+      return res.status(200).json(cached)
+    }
+
+    // Cache MISS or UNCACHED — query MongoDB
+    if (!bypassCache) cacheStats.misses++
     const tasks = await Task.find().sort({ createdAt: 1 })
+    if (!bypassCache) cache.set(cacheKey, tasks)
+    res.setHeader('X-Cache', bypassCache ? 'UNCACHED' : 'MISS')
     res.status(200).json(tasks)
   } catch (err) {
     next(err)
   }
 })
 
-// POST /tasks - Create a new task in MongoDB (protected)
+// GET /tasks/:id - Return a single task by ID with caching (Practical 9)
+app.get('/tasks/:id', authenticateToken, validateTaskId, async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const cacheKey = `task_${id}`
+    const cached = cache.get(cacheKey)
+
+    if (cached !== undefined) {
+      // Cache HIT
+      cacheStats.hits++
+      res.setHeader('X-Cache', 'HIT')
+      return res.status(200).json(cached)
+    }
+
+    // Cache MISS — query MongoDB
+    cacheStats.misses++
+    const task = await Task.findById(id)
+
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' })
+    }
+
+    cache.set(cacheKey, task)
+    res.setHeader('X-Cache', 'MISS')
+    res.status(200).json(task)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// POST /tasks - Create a new task in MongoDB; invalidates task-list cache (Practical 9)
 app.post('/tasks', authenticateToken, validateTaskInput, async (req, res, next) => {
   try {
     const { title, status } = req.body
@@ -353,13 +415,17 @@ app.post('/tasks', authenticateToken, validateTaskInput, async (req, res, next) 
 
     const newTask = new Task(taskData)
     await newTask.save()
+
+    // Invalidate task-list cache after successful save
+    cache.del('all_tasks')
+
     res.status(201).json(newTask)
   } catch (err) {
     next(err)
   }
 })
 
-// PUT /tasks/:id - Update an existing task in MongoDB using ObjectId (protected)
+// PUT /tasks/:id - Update an existing task; invalidates list + individual cache (Practical 9)
 app.put('/tasks/:id', authenticateToken, validateTaskId, validateTaskInput, async (req, res, next) => {
   try {
     const { id } = req.params
@@ -387,13 +453,17 @@ app.put('/tasks/:id', authenticateToken, validateTaskId, validateTaskInput, asyn
       return res.status(404).json({ error: 'Task not found' })
     }
 
+    // Invalidate both list cache and this task's individual cache after successful update
+    cache.del('all_tasks')
+    cache.del(`task_${id}`)
+
     res.status(200).json(updatedTask)
   } catch (err) {
     next(err)
   }
 })
 
-// DELETE /tasks/:id - Delete a task from MongoDB using ObjectId (protected)
+// DELETE /tasks/:id - Delete a task; invalidates list + individual cache (Practical 9)
 app.delete('/tasks/:id', authenticateToken, validateTaskId, async (req, res, next) => {
   try {
     const { id } = req.params
@@ -403,10 +473,40 @@ app.delete('/tasks/:id', authenticateToken, validateTaskId, async (req, res, nex
       return res.status(404).json({ error: 'Task not found' })
     }
 
-    res.status(200).json({ message: 'Task deleted successfully' })
+    // Invalidate both list cache and the deleted task's individual cache (Practical 9)
+    cache.del('all_tasks')
+    cache.del(`task_${id}`)
+
+    res.status(200).json({
+      message: 'Task deleted successfully',
+      deletedId: id,
+      cacheInvalidated: ['all_tasks', `task_${id}`]
+    })
   } catch (err) {
     next(err)
   }
+})
+
+// GET /debug/cache-stats - Cache hit/miss statistics (Practical 9 debug endpoint)
+app.get('/debug/cache-stats', (req, res) => {
+  const nodeCacheStats = cache.getStats()
+  res.status(200).json({
+    cacheHits: cacheStats.hits,
+    cacheMisses: cacheStats.misses,
+    totalLookups: cacheStats.lookups,
+    hitRatio: cacheStats.hitRatio,
+    hitPercentage: `${(cacheStats.hitRatio * 100).toFixed(2)}%`,
+    cachedKeys: cache.keys(),
+    nodeCacheInternalStats: {
+      hits: nodeCacheStats.hits,
+      misses: nodeCacheStats.misses,
+      keys: nodeCacheStats.keys,
+      ksize: nodeCacheStats.ksize,
+      vsize: nodeCacheStats.vsize
+    },
+    ttlSeconds: 60,
+    note: 'node-cache is process-local; cache clears on server restart and is not shared across multiple server instances'
+  })
 })
 
 // Simulated Error Trigger Route

@@ -1,0 +1,172 @@
+{
+  "info": {
+    "_postman_id": "a9b8c7d6-e5f4-4321-9876-practical0900",
+    "name": "Practical 9 - Task Caching & Optimization",
+    "description": "Postman Collection for Practical 9 (ITUE301) - In-Memory Caching and Query Optimization using node-cache",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhZDg4NThiZDczYTY1MTFkNzk2YmEwMSIsImVtYWlsIjoic3R1ZGVudEBleGFtcGxlLmNvbSIsImlhdCI6MTc5MjU3NDg2NiwiZXhwIjoxNzkyNTc4NDY2fQ.JGoZYk_017OcWR9vZ0jVLUsmxAQMLQzMgjp0kI874QI",
+      "type": "string"
+    },
+    {
+      "key": "taskId",
+      "value": "6a82d880094f38295aa48666",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01. GET All Tasks (Uncached / Cached)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/tasks",
+          "host": ["{{baseUrl}}"],
+          "path": ["tasks"]
+        },
+        "description": "Retrieves all tasks. Demonstrates cache miss on first run, and cache hits on subsequent runs."
+      }
+    },
+    {
+      "name": "02. GET Single Task by ID",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/tasks/{{taskId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["tasks", "{{taskId}}"]
+        },
+        "description": "Retrieves single task by MongoDB ObjectId with individual task caching."
+      }
+    },
+    {
+      "name": "03. POST Create Task (Cache Invalidation)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Implement node-cache Invalidation Protocol\",\n  \"status\": \"ongoing\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/tasks",
+          "host": ["{{baseUrl}}"],
+          "path": ["tasks"]
+        },
+        "description": "Creates a new task and invalidates the task-list cache."
+      }
+    },
+    {
+      "name": "04. PUT Update Task (Cache Invalidation)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Implement node-cache Invalidation Protocol (Completed)\",\n  \"status\": \"completed\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/tasks/{{taskId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["tasks", "{{taskId}}"]
+        },
+        "description": "Updates task title and status, invalidating both all_tasks and single task cache."
+      }
+    },
+    {
+      "name": "05. DELETE Task (Cache Invalidation)",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/tasks/{{taskId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["tasks", "{{taskId}}"]
+        },
+        "description": "Deletes task and invalidates caches."
+      }
+    },
+    {
+      "name": "06. GET Cache Debug Stats",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/debug/cache-stats",
+          "host": ["{{baseUrl}}"],
+          "path": ["debug", "cache-stats"]
+        },
+        "description": "Exposes in-memory cache hits, misses, lookups, and hit ratio."
+      }
+    },
+    {
+      "name": "07. Auth Validation - Unauthorized Request",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer invalid_or_expired_jwt_token",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/tasks",
+          "host": ["{{baseUrl}}"],
+          "path": ["tasks"]
+        },
+        "description": "Validates that protected task endpoints reject invalid tokens with 401 Unauthorized."
+      }
+    }
+  ]
+}
