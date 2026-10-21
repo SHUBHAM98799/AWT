@@ -120,13 +120,13 @@ export async function getTasks() {
 /**
  * POST - Create a new task in MongoDB (Protected)
  */
-export async function createTask(title) {
+export async function createTask(title, status = 'pending') {
   const response = await fetch(`${BASE_URL}/tasks`, {
     method: 'POST',
     headers: getAuthHeaders({
       'Content-Type': 'application/json'
     }),
-    body: JSON.stringify({ title: title.trim() })
+    body: JSON.stringify({ title: title.trim(), status })
   });
 
   return handleResponse(response);
@@ -135,13 +135,17 @@ export async function createTask(title) {
 /**
  * PUT - Update an existing task in MongoDB (Protected)
  */
-export async function updateTask(id, title) {
+export async function updateTask(id, title, status) {
+  const payload = {};
+  if (title !== undefined) payload.title = title.trim();
+  if (status !== undefined) payload.status = status;
+
   const response = await fetch(`${BASE_URL}/tasks/${id}`, {
     method: 'PUT',
     headers: getAuthHeaders({
       'Content-Type': 'application/json'
     }),
-    body: JSON.stringify({ title: title.trim() })
+    body: JSON.stringify(payload)
   });
 
   return handleResponse(response);

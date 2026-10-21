@@ -4,7 +4,8 @@ const WORDS = ['Future AI Engineer', 'Full Stack Developer', 'AI/ML Specialist',
 
 export default function Header({ name, themeColor }) {
   const [index, setIndex] = useState(0)
-  const [subIndex, setSubIndex] = useState(0)
+  // Initialize with full first word length so initial SSR/FCP paint immediately displays text without delay
+  const [subIndex, setSubIndex] = useState(WORDS[0].length)
   const [reverse, setReverse] = useState(false)
 
   // Typing effect logic
@@ -38,7 +39,7 @@ export default function Header({ name, themeColor }) {
         <h1 className="site-title">{name}</h1>
         <div className="site-subtitle">
           <span>&gt; {text}</span>
-          <span className="typing-cursor"></span>
+          <span className="typing-cursor" aria-hidden="true"></span>
         </div>
       </div>
     </header>

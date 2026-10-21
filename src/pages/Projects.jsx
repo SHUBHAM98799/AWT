@@ -111,6 +111,9 @@ export default function Projects() {
           </div>
           <input
             type="text"
+            id="github-search-input"
+            name="github-username"
+            aria-label="GitHub username to inspect"
             className="form-control github-input"
             placeholder="Enter GitHub username..."
             value={inputValue}
@@ -168,6 +171,9 @@ export default function Projects() {
               </svg>
               <input
                 type="text"
+                id="repo-filter-input"
+                name="repo-filter"
+                aria-label="Filter repositories by name or language"
                 className="form-control repo-filter-input"
                 placeholder="Filter repositories..."
                 value={repoFilter}

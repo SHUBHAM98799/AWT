@@ -1,13 +1,23 @@
-import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import { login } from '../api'
+import { useState, useEffect } from 'react'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
+import { login, getToken } from '../api'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  
   const navigate = useNavigate()
+  const location = useLocation()
+  const infoMessage = location.state?.message || null
+
+  // If user is already authenticated, redirect to /todo
+  useEffect(() => {
+    if (getToken()) {
+      navigate('/todo', { replace: true })
+    }
+  }, [navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -21,7 +31,7 @@ export default function Login() {
 
     try {
       await login(email, password)
-      navigate('/todo')
+      navigate('/todo', { replace: true })
     } catch (err) {
       console.error(err)
       setError(err.message || 'Login failed. Please check your credentials.')
@@ -37,6 +47,19 @@ export default function Login() {
         Authenticate to access system task protocols and database CRUD actions.
       </p>
 
+      {/* Info Notice (e.g. Session Expired) */}
+      {infoMessage && !error && (
+        <div className="github-status" style={{ marginBottom: '1rem', textAlign: 'left', borderColor: '#f59e0b', color: '#f59e0b' }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span>{infoMessage}</span>
+        </div>
+      )}
+
+      {/* Error Notice */}
       {error && (
         <div className="github-status github-error" style={{ marginBottom: '1rem', textAlign: 'left' }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -55,7 +78,9 @@ export default function Login() {
           </label>
           <input
             id="login-email"
+            name="email"
             type="email"
+            autoComplete="email"
             className="form-control todo-input"
             placeholder="student@example.com"
             value={email}
@@ -71,7 +96,9 @@ export default function Login() {
           </label>
           <input
             id="login-password"
+            name="password"
             type="password"
+            autoComplete="current-password"
             className="form-control todo-input"
             placeholder="••••••••"
             value={password}
@@ -93,7 +120,7 @@ export default function Login() {
         <div style={{ marginTop: '1rem', textAlign: 'center', fontSize: '0.85rem', color: 'var(--muted)' }}>
           Don't have an account?{' '}
           <Link to="/register" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 'bold' }}>
-            Register here
+            Register
           </Link>
         </div>
       </form>

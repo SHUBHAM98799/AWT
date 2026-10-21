@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { register } from '../api'
+import { register, getToken } from '../api'
 
 export default function Register() {
   const [email, setEmail] = useState('')
@@ -10,6 +10,13 @@ export default function Register() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
   const navigate = useNavigate()
+
+  // If user is already authenticated, redirect to /todo
+  useEffect(() => {
+    if (getToken()) {
+      navigate('/todo', { replace: true })
+    }
+  }, [navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -31,7 +38,7 @@ export default function Register() {
       setSuccess(true)
       setTimeout(() => {
         navigate('/login')
-      }, 1500)
+      }, 1200)
     } catch (err) {
       console.error(err)
       setError(err.message || 'Registration failed. Please try again.')
@@ -75,7 +82,9 @@ export default function Register() {
           </label>
           <input
             id="reg-email"
+            name="email"
             type="email"
+            autoComplete="email"
             className="form-control todo-input"
             placeholder="student@example.com"
             value={email}
@@ -91,7 +100,9 @@ export default function Register() {
           </label>
           <input
             id="reg-password"
+            name="password"
             type="password"
+            autoComplete="new-password"
             className="form-control todo-input"
             placeholder="••••••••"
             value={password}
@@ -107,7 +118,9 @@ export default function Register() {
           </label>
           <input
             id="reg-confirm-password"
+            name="confirmPassword"
             type="password"
+            autoComplete="new-password"
             className="form-control todo-input"
             placeholder="••••••••"
             value={confirmPassword}
@@ -129,7 +142,7 @@ export default function Register() {
         <div style={{ marginTop: '1rem', textAlign: 'center', fontSize: '0.85rem', color: 'var(--muted)' }}>
           Already have an account?{' '}
           <Link to="/login" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 'bold' }}>
-            Login here
+            Login
           </Link>
         </div>
       </form>
