@@ -6,6 +6,8 @@ const mongoose = require('mongoose')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const NodeCache = require('node-cache')
+const taskEvents = require('./events.cjs')
+require('./listeners.cjs')
 
 // ─── IN-MEMORY CACHE (Practical 9) ───
 // TTL: 60 seconds, check for expired keys every 120 seconds
@@ -53,10 +55,10 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/todoDB'
 // Connect to MongoDB when the server starts
 mongoose.connect(MONGO_URI)
   .then(() => {
-    console.log(`Connected to MongoDB successfully at: ${MONGO_URI}`)
+    console.log('Connected to MongoDB successfully')
   })
   .catch((err) => {
-    console.error(`❌ MongoDB connection error: Could not connect to database at ${MONGO_URI}`)
+    console.error('MongoDB connection error: Could not connect to the configured database')
     console.error(err.message || err)
   })
 
@@ -419,6 +421,18 @@ app.post('/tasks', authenticateToken, validateTaskInput, async (req, res, next) 
     // Invalidate task-list cache after successful save
     cache.del('all_tasks')
 
+    const eventPayload = {
+      taskId: newTask._id.toString(),
+      title: newTask.title,
+      assignedUser: String(req.user.id),
+      notificationTimestamp: new Date().toISOString()
+    }
+    console.log(`[API] Task saved at: ${new Date().toISOString()}`)
+
+    res.once('finish', () => {
+      console.log(`[API] Response sent at: ${new Date().toISOString()}`)
+      setImmediate(() => taskEvents.emit('task-created', eventPayload))
+    })
     res.status(201).json(newTask)
   } catch (err) {
     next(err)
@@ -477,6 +491,15 @@ app.delete('/tasks/:id', authenticateToken, validateTaskId, async (req, res, nex
     cache.del('all_tasks')
     cache.del(`task_${id}`)
 
+    const eventPayload = {
+      taskId: deletedTask._id.toString(),
+      title: deletedTask.title,
+      assignedUser: String(req.user.id)
+    }
+
+    res.once('finish', () => {
+      setImmediate(() => taskEvents.emit('task-deleted', eventPayload))
+    })
     res.status(200).json({
       message: 'Task deleted successfully',
       deletedId: id,

@@ -1,5 +1,7 @@
 # Advanced Web Development Frameworks (ITUE301)
 
+Practical 10 adds asynchronous task notifications and Docker support. See [Practical 10 results, tests, and viva notes](docs/practical-10-results.md).
+
 ## Practical 7: Authentication and Middleware Pipeline
 
 **Student Name:** Shubham Dholakiya  
