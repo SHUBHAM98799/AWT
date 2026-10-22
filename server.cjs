@@ -6,6 +6,8 @@ const mongoose = require('mongoose')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const NodeCache = require('node-cache')
+const taskEvents = require('./events.cjs')
+require('./listeners.cjs')
 
 // ─── IN-MEMORY CACHE (Practical 9) ───
 // TTL: 60 seconds, check for expired keys every 120 seconds
@@ -419,6 +421,17 @@ app.post('/tasks', authenticateToken, validateTaskInput, async (req, res, next) 
     // Invalidate task-list cache after successful save
     cache.del('all_tasks')
 
+    const eventPayload = {
+      taskId: newTask._id.toString(),
+      title: newTask.title,
+      assignedUser: (newTask.owner || req.user.id).toString()
+    }
+    console.log(`[API] Task saved at ${new Date().toISOString()}`)
+
+    res.once('finish', () => {
+      console.log(`[API] 201 response sent at ${new Date().toISOString()}`)
+      taskEvents.emit('task-created', eventPayload)
+    })
     res.status(201).json(newTask)
   } catch (err) {
     next(err)
@@ -477,6 +490,13 @@ app.delete('/tasks/:id', authenticateToken, validateTaskId, async (req, res, nex
     cache.del('all_tasks')
     cache.del(`task_${id}`)
 
+    const eventPayload = {
+      taskId: deletedTask._id.toString(),
+      title: deletedTask.title,
+      assignedUser: (deletedTask.owner || req.user.id).toString()
+    }
+
+    res.once('finish', () => taskEvents.emit('task-deleted', eventPayload))
     res.status(200).json({
       message: 'Task deleted successfully',
       deletedId: id,

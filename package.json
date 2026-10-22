@@ -8,6 +8,7 @@
     "server": "node server.cjs",
     "start": "node server.cjs",
     "build": "vite build",
+    "test": "node --test",
     "lint": "eslint .",
     "preview": "vite preview"
   },
