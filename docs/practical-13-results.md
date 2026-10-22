@@ -60,6 +60,8 @@ npm run build
 
 | Check | Result |
 |---|---|
+| Local `p13` implementation commit | `2977d8f` — `Practical 13 - AI API Integration` |
+| Push and remote GitHub verification | Blocked — `git push -u origin p13` could not obtain a password; no remote run or branch is claimed |
 | Mocked AI and API tests | 14 tests, 0 failures |
 | Live Gemini API request | Not performed with a real credential |
 | Frontend production build | Passed with `vite build` |
