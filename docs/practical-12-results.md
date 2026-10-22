@@ -22,7 +22,8 @@ When `server.cjs` is run directly, it retains its normal MongoDB connection and 
 |---|---|
 | Local automated tests | PASS — 4 tests, 0 failures (3 HTTP endpoint tests and the existing event-notification test) |
 | Local production frontend build | PASS — `vite build` completed |
-| GitHub Actions initial passing run | Not verified — this session has no authenticated GitHub account to push `p12` or inspect Actions |
+| Initial valid pipeline commit | `b7f08a0` — tests and build passed locally; push to `origin/p12` was blocked because Git could not obtain a password |
+| GitHub Actions initial passing run | Not verified — the branch was not pushed, so no Actions run was created |
 | Deliberately failed run | Not performed — the required initial green GitHub Actions run was not confirmed |
 | Final GitHub Actions run | Not verified — no remote run could be started or inspected |
 
