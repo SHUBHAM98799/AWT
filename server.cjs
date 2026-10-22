@@ -6,7 +6,9 @@ const mongoose = require('mongoose')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const NodeCache = require('node-cache')
+const crypto = require('node:crypto')
 const taskEvents = require('./events.cjs')
+const { generateTaskDescription } = require('./ai.cjs')
 require('./listeners.cjs')
 
 // ─── IN-MEMORY CACHE (Practical 9) ───
@@ -26,6 +28,9 @@ const cacheStats = {
 
 const app = express()
 const PORT = process.env.PORT || 5000
+const AI_RATE_LIMIT_MS = 60 * 1000
+const AI_RATE_LIMIT_MAX_ENTRIES = 500
+const aiRequestTimes = new Map()
 
 // Simple dependency-free helper to load .env if it exists
 const dotenvPath = path.join(__dirname, '.env')
@@ -93,6 +98,11 @@ const taskSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true
+  },
+  description: {
+    type: String,
+    trim: true,
+    default: ''
   },
   status: {
     type: String,
@@ -215,7 +225,7 @@ const validateAuthInput = (req, res, next) => {
 
 // Validation middleware for Task creation/update
 const validateTaskInput = (req, res, next) => {
-  const { title, status } = req.body || {}
+  const { title, status, description } = req.body || {}
   if (req.method === 'POST') {
     if (!title || typeof title !== 'string' || !title.trim()) {
       return res.status(400).json({ error: 'Task title is required' })
@@ -230,6 +240,9 @@ const validateTaskInput = (req, res, next) => {
     if (typeof status !== 'string' || !VALID_STATUSES.includes(status.trim().toLowerCase())) {
       return res.status(400).json({ error: 'Invalid status. Must be pending, ongoing, or completed' })
     }
+  }
+  if (description !== undefined && (typeof description !== 'string' || description.length > 2000)) {
+    return res.status(400).json({ error: 'Task description must be 2000 characters or fewer' })
   }
   next()
 }
@@ -260,6 +273,65 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
 }
+
+app.locals.generateTaskDescription = generateTaskDescription
+app.locals.aiRequestTimes = aiRequestTimes
+
+app.post('/api/ai/generate-description', authenticateToken, async (req, res) => {
+  const title = req.body?.title
+  if (typeof title !== 'string' || !title.trim()) {
+    return res.status(400).json({ error: 'Task title is required' })
+  }
+
+  const normalizedTitle = title.trim()
+  if (normalizedTitle.length > 200) {
+    return res.status(400).json({ error: 'Task title must be 200 characters or fewer' })
+  }
+  if (!req.user.id) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+
+  const limiterKey = crypto
+    .createHash('sha256')
+    .update(`${req.user.id}\0${normalizedTitle.toLowerCase()}`)
+    .digest('hex')
+  const now = Date.now()
+  const requestTimes = app.locals.aiRequestTimes
+
+  for (const [key, timestamp] of requestTimes) {
+    if (now - timestamp >= AI_RATE_LIMIT_MS) requestTimes.delete(key)
+  }
+
+  const previousRequest = requestTimes.get(limiterKey)
+  if (previousRequest !== undefined) {
+    const retryAfter = Math.max(1, Math.ceil((AI_RATE_LIMIT_MS - (now - previousRequest)) / 1000))
+    res.setHeader('Retry-After', retryAfter)
+    return res.status(429).json({
+      description: '',
+      fallback: true,
+      message: 'Please wait before requesting another suggestion for this task.'
+    })
+  }
+
+  if (requestTimes.size >= AI_RATE_LIMIT_MAX_ENTRIES) {
+    requestTimes.delete(requestTimes.keys().next().value)
+  }
+  requestTimes.set(limiterKey, now)
+
+  try {
+    const description = await app.locals.generateTaskDescription(normalizedTitle)
+    if (typeof description !== 'string' || !description.trim() || description.length > 2000) {
+      throw new Error('AI provider returned an invalid task description')
+    }
+    return res.status(200).json({ description: description.trim(), fallback: false })
+  } catch {
+    return res.status(503).json({
+      description: '',
+      fallback: true,
+      message: 'AI suggestions are temporarily unavailable. You can enter the description manually.'
+    })
+  }
+})
 
 // ─── AUTHENTICATION ENDPOINTS ───
 
@@ -410,8 +482,9 @@ app.get('/tasks/:id', authenticateToken, validateTaskId, async (req, res, next) 
 // POST /tasks - Create a new task in MongoDB; invalidates task-list cache (Practical 9)
 app.post('/tasks', authenticateToken, validateTaskInput, async (req, res, next) => {
   try {
-    const { title, status } = req.body
+    const { title, status, description } = req.body
     const taskData = { title: title.trim() }
+    if (description !== undefined) taskData.description = description.trim()
     if (status) {
       taskData.status = status.trim().toLowerCase()
     }
@@ -444,11 +517,14 @@ app.post('/tasks', authenticateToken, validateTaskInput, async (req, res, next) 
 app.put('/tasks/:id', authenticateToken, validateTaskId, validateTaskInput, async (req, res, next) => {
   try {
     const { id } = req.params
-    const { title, status } = req.body
+    const { title, status, description } = req.body
 
     const updateData = {}
     if (title !== undefined && title.trim() !== '') {
       updateData.title = title.trim()
+    }
+    if (description !== undefined) {
+      updateData.description = description.trim()
     }
     if (status !== undefined) {
       updateData.status = status.trim().toLowerCase()
@@ -552,6 +628,9 @@ app.use((req, res, next) => {
 
 // ─── MIDDLEWARE 2: Global Error Handler (MUST be last) ───
 app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ error: 'Invalid JSON request body' })
+  }
   console.error('Captured Global Error:', err.message || err)
   res.status(500).json({ error: 'Something went wrong' })
 })

@@ -22,7 +22,7 @@ after(async () => {
 test('GET /status returns the server health response', async () => {
   const response = await fetch(`${baseUrl}/status`)
 
-  assert.equal(response.status, 500)
+  assert.equal(response.status, 200)
   assert.deepEqual(await response.json(), {
     status: 'UP',
     message: 'Express CRUD server is running.'

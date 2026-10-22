@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - p12
+      - p13
   pull_request:
     branches:
       - main

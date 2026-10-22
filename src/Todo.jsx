@@ -1,15 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { getTasks, createTask, updateTask, deleteTask, getMe, getToken, logout } from './api'
+import { getTasks, createTask, updateTask, deleteTask, generateTaskDescription, getMe, getToken, logout } from './api'
 
 // Practical 8 - Task Status Board Component
 export default function Todo() {
   const [tasks, setTasks] = useState([])
   const [newTitle, setNewTitle] = useState('')
+  const [newDescription, setNewDescription] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiFeedback, setAiFeedback] = useState(null)
   
-  // Edit state for both title and status
+  // Edit state for title, description, and status
   const [editingTaskId, setEditingTaskId] = useState(null)
   const [editTitle, setEditTitle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
   const [editStatus, setEditStatus] = useState('pending')
 
   const [user, setUser] = useState(null)
@@ -96,6 +100,7 @@ export default function Todo() {
     if (e) e.preventDefault()
 
     const titleToAdd = newTitle.trim()
+    const descriptionToAdd = newDescription.trim()
     if (!titleToAdd) return
 
     setLoadingAdd(true)
@@ -105,6 +110,7 @@ export default function Todo() {
     const tempTask = {
       _id: tempId,
       title: titleToAdd,
+      description: descriptionToAdd,
       status: 'pending',
       createdAt: new Date().toISOString(),
       isOptimistic: true
@@ -113,9 +119,11 @@ export default function Todo() {
     // Optimistically update main task list
     setTasks((prev) => [...prev, tempTask])
     setNewTitle('')
+    setNewDescription('')
+    setAiFeedback(null)
 
     try {
-      const createdTask = await createTask(titleToAdd, 'pending')
+      const createdTask = await createTask(titleToAdd, 'pending', descriptionToAdd)
       // Replace optimistic task with actual DB task
       setTasks((prev) =>
         prev.map((t) => (t._id === tempId ? createdTask : t))
@@ -127,6 +135,7 @@ export default function Todo() {
       setTasks((prev) => prev.filter((t) => t._id !== tempId))
       // Recover input text
       setNewTitle(titleToAdd)
+      setNewDescription(descriptionToAdd)
 
       if (err.status === 401) {
         handle401Error()
@@ -138,16 +147,49 @@ export default function Todo() {
     }
   }
 
+  const handleGenerateDescription = async () => {
+    const title = newTitle.trim()
+    if (!title) {
+      setAiFeedback({ type: 'error', message: 'Enter a task title before requesting a description.' })
+      return
+    }
+
+    setAiLoading(true)
+    setAiFeedback(null)
+    try {
+      const result = await generateTaskDescription(title)
+      if (result.fallback || !result.description?.trim()) {
+        setAiFeedback({
+          type: 'fallback',
+          message: result.message || 'AI suggestions are temporarily unavailable. You can enter a description manually.'
+        })
+        return
+      }
+      setNewDescription(result.description)
+      setAiFeedback({ type: 'success', message: 'AI suggestion ready. Review and edit it before saving.' })
+    } catch (err) {
+      if (err.status === 401) handle401Error()
+      setAiFeedback({
+        type: 'fallback',
+        message: err.message || 'AI suggestions are temporarily unavailable. You can enter a description manually.'
+      })
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
   // Start editing a task
   const startEdit = (task) => {
     setEditingTaskId(task._id)
     setEditTitle(task.title)
+    setEditDescription(task.description || '')
     setEditStatus(task.status || 'pending')
   }
 
   const cancelEdit = () => {
     setEditingTaskId(null)
     setEditTitle('')
+    setEditDescription('')
     setEditStatus('pending')
   }
 
@@ -167,7 +209,7 @@ export default function Todo() {
 
     setLoadingUpdateId(targetId)
     try {
-      const updated = await updateTask(targetId, titleToUpdate, editStatus)
+      const updated = await updateTask(targetId, titleToUpdate, editStatus, editDescription)
       // Update main tasks state -> derived columns recalculate automatically!
       setTasks((prev) => prev.map((t) => (t._id === targetId ? updated : t)))
       cancelEdit()
@@ -255,6 +297,17 @@ export default function Todo() {
               />
             </div>
             <div className="form-group" style={{ marginTop: '0.5rem' }}>
+              <label htmlFor={`edit-task-description-${task._id}`}>Description:</label>
+              <textarea
+                id={`edit-task-description-${task._id}`}
+                className="form-control todo-edit-input todo-description-input"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                maxLength={2000}
+                disabled={loadingUpdateId === task._id}
+              />
+            </div>
+            <div className="form-group" style={{ marginTop: '0.5rem' }}>
               <label style={{ fontSize: '0.8rem', color: 'var(--text-h)' }}>Status:</label>
               <select
                 className="form-control todo-edit-select"
@@ -306,6 +359,8 @@ export default function Todo() {
           {currentStatus === 'ongoing' && <span className="status-badge badge-ongoing">🔵 Ongoing</span>}
           {currentStatus === 'completed' && <span className="status-badge badge-completed">🟢 Completed</span>}
         </div>
+
+        {task.description && <p className="task-card-description">{task.description}</p>}
 
         <div className="task-card-actions">
           <button 
@@ -373,7 +428,8 @@ export default function Todo() {
       </div>
 
       {/* ─── Add Task Form (Creates task in default status: pending) ─── */}
-      <form onSubmit={handleAddTask} className="todo-form" style={{ marginBottom: '2rem' }}>
+      <form onSubmit={handleAddTask} className="todo-form todo-create-form" style={{ marginBottom: '2rem' }}>
+        <label className="sr-only" htmlFor="new-task-title">Task title</label>
         <input
           type="text"
           id="new-task-title"
@@ -383,16 +439,44 @@ export default function Todo() {
           placeholder={loadingAdd ? "Creating task..." : "Create new task title (defaults to Pending)..."}
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
-          disabled={loadingGet || isPendingState}
+          disabled={loadingGet || isPendingState || aiLoading}
+          maxLength={200}
           style={{ flexGrow: 1 }}
         />
-        <button 
-          type="submit" 
-          className="btn btn-primary todo-add-btn" 
-          disabled={loadingGet || isPendingState || !newTitle.trim()}
-        >
-          {loadingAdd ? 'Adding...' : '+ Create Task'}
-        </button>
+        <label className="sr-only" htmlFor="new-task-description">Task description</label>
+        <textarea
+          id="new-task-description"
+          name="new-task-description"
+          className="form-control todo-description-input"
+          placeholder="Add a description or generate an editable suggestion..."
+          value={newDescription}
+          onChange={(e) => setNewDescription(e.target.value)}
+          maxLength={2000}
+          disabled={loadingGet || isPendingState}
+        />
+        <p className="ai-disclaimer">AI-generated content may be inaccurate. Review and edit before saving.</p>
+        {aiFeedback && (
+          <p className={`ai-feedback ai-feedback-${aiFeedback.type}`} role="status">
+            {aiFeedback.message}
+          </p>
+        )}
+        <div className="todo-create-actions">
+          <button
+            type="button"
+            className="btn ai-generate-btn"
+            onClick={handleGenerateDescription}
+            disabled={loadingGet || isPendingState || aiLoading || !newTitle.trim()}
+          >
+            {aiLoading ? 'Generating...' : 'Generate Description'}
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary todo-add-btn"
+            disabled={loadingGet || isPendingState || aiLoading || !newTitle.trim()}
+          >
+            {loadingAdd ? 'Adding...' : '+ Create Task'}
+          </button>
+        </div>
       </form>
 
       {/* ─── Loading State ─── */}

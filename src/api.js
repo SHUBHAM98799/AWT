@@ -43,7 +43,7 @@ async function handleResponse(response) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    const error = new Error(errorData.error || `Request failed with status ${response.status}`);
+    const error = new Error(errorData.error || errorData.message || `Request failed with status ${response.status}`);
     error.status = response.status;
     throw error;
   }
@@ -118,15 +118,30 @@ export async function getTasks() {
 }
 
 /**
+ * POST - Generate an optional task description using the authenticated backend
+ */
+export async function generateTaskDescription(title) {
+  const response = await fetch(`${BASE_URL}/api/ai/generate-description`, {
+    method: 'POST',
+    headers: getAuthHeaders({
+      'Content-Type': 'application/json'
+    }),
+    body: JSON.stringify({ title: title.trim() })
+  })
+
+  return handleResponse(response)
+}
+
+/**
  * POST - Create a new task in MongoDB (Protected)
  */
-export async function createTask(title, status = 'pending') {
+export async function createTask(title, status = 'pending', description = '') {
   const response = await fetch(`${BASE_URL}/tasks`, {
     method: 'POST',
     headers: getAuthHeaders({
       'Content-Type': 'application/json'
     }),
-    body: JSON.stringify({ title: title.trim(), status })
+    body: JSON.stringify({ title: title.trim(), status, description: description.trim() })
   });
 
   return handleResponse(response);
@@ -135,10 +150,11 @@ export async function createTask(title, status = 'pending') {
 /**
  * PUT - Update an existing task in MongoDB (Protected)
  */
-export async function updateTask(id, title, status) {
+export async function updateTask(id, title, status, description) {
   const payload = {};
   if (title !== undefined) payload.title = title.trim();
   if (status !== undefined) payload.status = status;
+  if (description !== undefined) payload.description = description;
 
   const response = await fetch(`${BASE_URL}/tasks/${id}`, {
     method: 'PUT',
