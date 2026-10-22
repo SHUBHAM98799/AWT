@@ -52,15 +52,16 @@ if (fs.existsSync(dotenvPath)) {
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/todoDB'
 
-// Connect to MongoDB when the server starts
-mongoose.connect(MONGO_URI)
-  .then(() => {
-    console.log('Connected to MongoDB successfully')
-  })
-  .catch((err) => {
-    console.error('MongoDB connection error: Could not connect to the configured database')
-    console.error(err.message || err)
-  })
+if (require.main === module) {
+  mongoose.connect(MONGO_URI)
+    .then(() => {
+      console.log('Connected to MongoDB successfully')
+    })
+    .catch((err) => {
+      console.error('MongoDB connection error: Could not connect to the configured database')
+      console.error(err.message || err)
+    })
+}
 
 // ─── MONGOOSE SCHEMAS & MODELS ───
 
@@ -555,22 +556,26 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong' })
 })
 
-// Spin up server with macOS port 5000 help handling
-const server = app.listen(PORT, () => {
-  console.log(`Task Management server running on http://localhost:${PORT}`)
-})
+if (require.main === module) {
+  // Spin up server with macOS port 5000 help handling
+  const server = app.listen(PORT, () => {
+    console.log(`Task Management server running on http://localhost:${PORT}`)
+  })
 
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`\n❌ ERROR: Port ${PORT} is already in use.`)
-    console.error(`On macOS, this is usually occupied by the "AirPlay Receiver" service.`)
-    console.error(`To fix this and run the server on port ${PORT}:`)
-    console.error(`1. Open "System Settings"`)
-    console.error(`2. Go to "General" -> "AirDrop & Handoff"`)
-    console.error(`3. Toggle "AirPlay Receiver" OFF.`)
-    console.error(`Alternatively, you can run the server on a different port by setting the PORT environment variable: PORT=5001 node server.js\n`)
-    process.exit(1)
-  } else {
-    console.error('Server error:', err)
-  }
-})
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n❌ ERROR: Port ${PORT} is already in use.`)
+      console.error(`On macOS, this is usually occupied by the "AirPlay Receiver" service.`)
+      console.error(`To fix this and run the server on port ${PORT}:`)
+      console.error(`1. Open "System Settings"`)
+      console.error(`2. Go to "General" -> "AirDrop & Handoff"`)
+      console.error(`3. Toggle "AirPlay Receiver" OFF.`)
+      console.error(`Alternatively, you can run the server on a different port by setting the PORT environment variable: PORT=5001 node server.js\n`)
+      process.exit(1)
+    } else {
+      console.error('Server error:', err)
+    }
+  })
+}
+
+module.exports = app
