@@ -1,0 +1,81 @@
+{
+  "info": {
+    "name": "Practical 10 - Event-Driven Task Notifications",
+    "description": "Set email and password in a private Postman environment. The collection stores the returned JWT and created task ID in collection variables; no credentials are embedded.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "email", "value": "" },
+    { "key": "password", "value": "" },
+    { "key": "token", "value": "" },
+    { "key": "taskId", "value": "" },
+    { "key": "taskTitle", "value": "Practical 10 notification verification" }
+  ],
+  "item": [
+    {
+      "name": "1. Login",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Login returns 200', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('token', pm.response.json().token);"
+          ]
+        }
+      }],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}", "options": { "raw": { "language": "json" } } },
+        "url": "{{baseUrl}}/login"
+      }
+    },
+    {
+      "name": "2. Create task (observe response timing)",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Task creation returns 201', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('taskId', pm.response.json()._id);"
+          ]
+        }
+      }],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"title\": \"{{taskTitle}}\",\n  \"status\": \"pending\"\n}", "options": { "raw": { "language": "json" } } },
+        "url": "{{baseUrl}}/tasks"
+      }
+    },
+    {
+      "name": "3. Verify cache stats",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/debug/cache-stats"
+      }
+    },
+    {
+      "name": "4. Delete task",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": ["pm.test('Task deletion returns 200', () => pm.response.to.have.status(200));"]
+        }
+      }],
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/tasks/{{taskId}}"
+      }
+    }
+  ]
+}

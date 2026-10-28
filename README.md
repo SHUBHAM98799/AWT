@@ -1,5 +1,11 @@
 # Advanced Web Development Frameworks (ITUE301)
 
+[![CI Pipeline](https://github.com/SHUBHAM98799/AWT/actions/workflows/ci.yml/badge.svg?branch=p12)](https://github.com/SHUBHAM98799/AWT/actions/workflows/ci.yml)
+
+Practical 10 adds asynchronous task notifications and Docker support. See [Practical 10 results, tests, and viva notes](docs/practical-10-results.md).
+Practical 12 adds a GitHub Actions CI pipeline. See [Practical 12 results and viva notes](docs/practical-12-results.md).
+Practical 13 adds an optional Gemini-backed task-description suggestion. See [Practical 13 results and setup](docs/practical-13-results.md).
+
 ## Practical 7: Authentication and Middleware Pipeline
 
 **Student Name:** Shubham Dholakiya  

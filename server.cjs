@@ -5,9 +5,32 @@ const path = require('path')
 const mongoose = require('mongoose')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
+const NodeCache = require('node-cache')
+const crypto = require('node:crypto')
+const taskEvents = require('./events.cjs')
+const { generateTaskDescription } = require('./ai.cjs')
+require('./listeners.cjs')
+
+// ─── IN-MEMORY CACHE (Practical 9) ───
+// TTL: 60 seconds, check for expired keys every 120 seconds
+const cache = new NodeCache({ stdTTL: 60, checkperiod: 120 })
+
+// Cache hit/miss statistics counters
+const cacheStats = {
+  hits: 0,
+  misses: 0,
+  get lookups() { return this.hits + this.misses },
+  get hitRatio() {
+    const total = this.hits + this.misses
+    return total === 0 ? 0 : parseFloat((this.hits / total).toFixed(4))
+  }
+}
 
 const app = express()
 const PORT = process.env.PORT || 5000
+const AI_RATE_LIMIT_MS = 60 * 1000
+const AI_RATE_LIMIT_MAX_ENTRIES = 500
+const aiRequestTimes = new Map()
 
 // Simple dependency-free helper to load .env if it exists
 const dotenvPath = path.join(__dirname, '.env')
@@ -34,15 +57,16 @@ if (fs.existsSync(dotenvPath)) {
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/todoDB'
 
-// Connect to MongoDB when the server starts
-mongoose.connect(MONGO_URI)
-  .then(() => {
-    console.log(`Connected to MongoDB successfully at: ${MONGO_URI}`)
-  })
-  .catch((err) => {
-    console.error(`❌ MongoDB connection error: Could not connect to database at ${MONGO_URI}`)
-    console.error(err.message || err)
-  })
+if (require.main === module) {
+  mongoose.connect(MONGO_URI)
+    .then(() => {
+      console.log('Connected to MongoDB successfully')
+    })
+    .catch((err) => {
+      console.error('MongoDB connection error: Could not connect to the configured database')
+      console.error(err.message || err)
+    })
+}
 
 // ─── MONGOOSE SCHEMAS & MODELS ───
 
@@ -74,6 +98,11 @@ const taskSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true
+  },
+  description: {
+    type: String,
+    trim: true,
+    default: ''
   },
   status: {
     type: String,
@@ -196,7 +225,7 @@ const validateAuthInput = (req, res, next) => {
 
 // Validation middleware for Task creation/update
 const validateTaskInput = (req, res, next) => {
-  const { title, status } = req.body || {}
+  const { title, status, description } = req.body || {}
   if (req.method === 'POST') {
     if (!title || typeof title !== 'string' || !title.trim()) {
       return res.status(400).json({ error: 'Task title is required' })
@@ -211,6 +240,9 @@ const validateTaskInput = (req, res, next) => {
     if (typeof status !== 'string' || !VALID_STATUSES.includes(status.trim().toLowerCase())) {
       return res.status(400).json({ error: 'Invalid status. Must be pending, ongoing, or completed' })
     }
+  }
+  if (description !== undefined && (typeof description !== 'string' || description.length > 2000)) {
+    return res.status(400).json({ error: 'Task description must be 2000 characters or fewer' })
   }
   next()
 }
@@ -241,6 +273,65 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
 }
+
+app.locals.generateTaskDescription = generateTaskDescription
+app.locals.aiRequestTimes = aiRequestTimes
+
+app.post('/api/ai/generate-description', authenticateToken, async (req, res) => {
+  const title = req.body?.title
+  if (typeof title !== 'string' || !title.trim()) {
+    return res.status(400).json({ error: 'Task title is required' })
+  }
+
+  const normalizedTitle = title.trim()
+  if (normalizedTitle.length > 200) {
+    return res.status(400).json({ error: 'Task title must be 200 characters or fewer' })
+  }
+  if (!req.user.id) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+
+  const limiterKey = crypto
+    .createHash('sha256')
+    .update(`${req.user.id}\0${normalizedTitle.toLowerCase()}`)
+    .digest('hex')
+  const now = Date.now()
+  const requestTimes = app.locals.aiRequestTimes
+
+  for (const [key, timestamp] of requestTimes) {
+    if (now - timestamp >= AI_RATE_LIMIT_MS) requestTimes.delete(key)
+  }
+
+  const previousRequest = requestTimes.get(limiterKey)
+  if (previousRequest !== undefined) {
+    const retryAfter = Math.max(1, Math.ceil((AI_RATE_LIMIT_MS - (now - previousRequest)) / 1000))
+    res.setHeader('Retry-After', retryAfter)
+    return res.status(429).json({
+      description: '',
+      fallback: true,
+      message: 'Please wait before requesting another suggestion for this task.'
+    })
+  }
+
+  if (requestTimes.size >= AI_RATE_LIMIT_MAX_ENTRIES) {
+    requestTimes.delete(requestTimes.keys().next().value)
+  }
+  requestTimes.set(limiterKey, now)
+
+  try {
+    const description = await app.locals.generateTaskDescription(normalizedTitle)
+    if (typeof description !== 'string' || !description.trim() || description.length > 2000) {
+      throw new Error('AI provider returned an invalid task description')
+    }
+    return res.status(200).json({ description: description.trim(), fallback: false })
+  } catch {
+    return res.status(503).json({
+      description: '',
+      fallback: true,
+      message: 'AI suggestions are temporarily unavailable. You can enter the description manually.'
+    })
+  }
+})
 
 // ─── AUTHENTICATION ENDPOINTS ───
 
@@ -332,42 +423,108 @@ app.get('/me', authenticateToken, async (req, res, next) => {
 
 // ─── PROTECTED TASK CRUD Endpoints ───
 
-// GET /tasks - Return all tasks from MongoDB (protected)
+// GET /tasks - Return all tasks from MongoDB with in-memory caching (Practical 9)
 app.get('/tasks', authenticateToken, async (req, res, next) => {
   try {
+    const bypassCache = req.query.noCache === 'true' || req.headers['cache-control'] === 'no-cache'
+    const cacheKey = 'all_tasks'
+    const cached = bypassCache ? undefined : cache.get(cacheKey)
+
+    if (cached !== undefined) {
+      // Cache HIT — return cached tasks without a DB query
+      cacheStats.hits++
+      res.setHeader('X-Cache', 'HIT')
+      res.setHeader('X-Cache-TTL-Remaining', cache.getTtl(cacheKey) - Date.now())
+      return res.status(200).json(cached)
+    }
+
+    // Cache MISS or UNCACHED — query MongoDB
+    if (!bypassCache) cacheStats.misses++
     const tasks = await Task.find().sort({ createdAt: 1 })
+    if (!bypassCache) cache.set(cacheKey, tasks)
+    res.setHeader('X-Cache', bypassCache ? 'UNCACHED' : 'MISS')
     res.status(200).json(tasks)
   } catch (err) {
     next(err)
   }
 })
 
-// POST /tasks - Create a new task in MongoDB (protected)
+// GET /tasks/:id - Return a single task by ID with caching (Practical 9)
+app.get('/tasks/:id', authenticateToken, validateTaskId, async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const cacheKey = `task_${id}`
+    const cached = cache.get(cacheKey)
+
+    if (cached !== undefined) {
+      // Cache HIT
+      cacheStats.hits++
+      res.setHeader('X-Cache', 'HIT')
+      return res.status(200).json(cached)
+    }
+
+    // Cache MISS — query MongoDB
+    cacheStats.misses++
+    const task = await Task.findById(id)
+
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' })
+    }
+
+    cache.set(cacheKey, task)
+    res.setHeader('X-Cache', 'MISS')
+    res.status(200).json(task)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// POST /tasks - Create a new task in MongoDB; invalidates task-list cache (Practical 9)
 app.post('/tasks', authenticateToken, validateTaskInput, async (req, res, next) => {
   try {
-    const { title, status } = req.body
+    const { title, status, description } = req.body
     const taskData = { title: title.trim() }
+    if (description !== undefined) taskData.description = description.trim()
     if (status) {
       taskData.status = status.trim().toLowerCase()
     }
 
     const newTask = new Task(taskData)
     await newTask.save()
+
+    // Invalidate task-list cache after successful save
+    cache.del('all_tasks')
+
+    const eventPayload = {
+      taskId: newTask._id.toString(),
+      title: newTask.title,
+      assignedUser: String(req.user.id),
+      notificationTimestamp: new Date().toISOString()
+    }
+    console.log(`[API] Task saved at: ${new Date().toISOString()}`)
+
+    res.once('finish', () => {
+      console.log(`[API] Response sent at: ${new Date().toISOString()}`)
+      setImmediate(() => taskEvents.emit('task-created', eventPayload))
+    })
     res.status(201).json(newTask)
   } catch (err) {
     next(err)
   }
 })
 
-// PUT /tasks/:id - Update an existing task in MongoDB using ObjectId (protected)
+// PUT /tasks/:id - Update an existing task; invalidates list + individual cache (Practical 9)
 app.put('/tasks/:id', authenticateToken, validateTaskId, validateTaskInput, async (req, res, next) => {
   try {
     const { id } = req.params
-    const { title, status } = req.body
+    const { title, status, description } = req.body
 
     const updateData = {}
     if (title !== undefined && title.trim() !== '') {
       updateData.title = title.trim()
+    }
+    if (description !== undefined) {
+      updateData.description = description.trim()
     }
     if (status !== undefined) {
       updateData.status = status.trim().toLowerCase()
@@ -387,13 +544,17 @@ app.put('/tasks/:id', authenticateToken, validateTaskId, validateTaskInput, asyn
       return res.status(404).json({ error: 'Task not found' })
     }
 
+    // Invalidate both list cache and this task's individual cache after successful update
+    cache.del('all_tasks')
+    cache.del(`task_${id}`)
+
     res.status(200).json(updatedTask)
   } catch (err) {
     next(err)
   }
 })
 
-// DELETE /tasks/:id - Delete a task from MongoDB using ObjectId (protected)
+// DELETE /tasks/:id - Delete a task; invalidates list + individual cache (Practical 9)
 app.delete('/tasks/:id', authenticateToken, validateTaskId, async (req, res, next) => {
   try {
     const { id } = req.params
@@ -403,10 +564,49 @@ app.delete('/tasks/:id', authenticateToken, validateTaskId, async (req, res, nex
       return res.status(404).json({ error: 'Task not found' })
     }
 
-    res.status(200).json({ message: 'Task deleted successfully' })
+    // Invalidate both list cache and the deleted task's individual cache (Practical 9)
+    cache.del('all_tasks')
+    cache.del(`task_${id}`)
+
+    const eventPayload = {
+      taskId: deletedTask._id.toString(),
+      title: deletedTask.title,
+      assignedUser: String(req.user.id)
+    }
+
+    res.once('finish', () => {
+      setImmediate(() => taskEvents.emit('task-deleted', eventPayload))
+    })
+    res.status(200).json({
+      message: 'Task deleted successfully',
+      deletedId: id,
+      cacheInvalidated: ['all_tasks', `task_${id}`]
+    })
   } catch (err) {
     next(err)
   }
+})
+
+// GET /debug/cache-stats - Cache hit/miss statistics (Practical 9 debug endpoint)
+app.get('/debug/cache-stats', (req, res) => {
+  const nodeCacheStats = cache.getStats()
+  res.status(200).json({
+    cacheHits: cacheStats.hits,
+    cacheMisses: cacheStats.misses,
+    totalLookups: cacheStats.lookups,
+    hitRatio: cacheStats.hitRatio,
+    hitPercentage: `${(cacheStats.hitRatio * 100).toFixed(2)}%`,
+    cachedKeys: cache.keys(),
+    nodeCacheInternalStats: {
+      hits: nodeCacheStats.hits,
+      misses: nodeCacheStats.misses,
+      keys: nodeCacheStats.keys,
+      ksize: nodeCacheStats.ksize,
+      vsize: nodeCacheStats.vsize
+    },
+    ttlSeconds: 60,
+    note: 'node-cache is process-local; cache clears on server restart and is not shared across multiple server instances'
+  })
 })
 
 // Simulated Error Trigger Route
@@ -428,26 +628,33 @@ app.use((req, res, next) => {
 
 // ─── MIDDLEWARE 2: Global Error Handler (MUST be last) ───
 app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ error: 'Invalid JSON request body' })
+  }
   console.error('Captured Global Error:', err.message || err)
   res.status(500).json({ error: 'Something went wrong' })
 })
 
-// Spin up server with macOS port 5000 help handling
-const server = app.listen(PORT, () => {
-  console.log(`Task Management server running on http://localhost:${PORT}`)
-})
+if (require.main === module) {
+  // Spin up server with macOS port 5000 help handling
+  const server = app.listen(PORT, () => {
+    console.log(`Task Management server running on http://localhost:${PORT}`)
+  })
 
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`\n❌ ERROR: Port ${PORT} is already in use.`)
-    console.error(`On macOS, this is usually occupied by the "AirPlay Receiver" service.`)
-    console.error(`To fix this and run the server on port ${PORT}:`)
-    console.error(`1. Open "System Settings"`)
-    console.error(`2. Go to "General" -> "AirDrop & Handoff"`)
-    console.error(`3. Toggle "AirPlay Receiver" OFF.`)
-    console.error(`Alternatively, you can run the server on a different port by setting the PORT environment variable: PORT=5001 node server.js\n`)
-    process.exit(1)
-  } else {
-    console.error('Server error:', err)
-  }
-})
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n❌ ERROR: Port ${PORT} is already in use.`)
+      console.error(`On macOS, this is usually occupied by the "AirPlay Receiver" service.`)
+      console.error(`To fix this and run the server on port ${PORT}:`)
+      console.error(`1. Open "System Settings"`)
+      console.error(`2. Go to "General" -> "AirDrop & Handoff"`)
+      console.error(`3. Toggle "AirPlay Receiver" OFF.`)
+      console.error(`Alternatively, you can run the server on a different port by setting the PORT environment variable: PORT=5001 node server.js\n`)
+      process.exit(1)
+    } else {
+      console.error('Server error:', err)
+    }
+  })
+}
+
+module.exports = app

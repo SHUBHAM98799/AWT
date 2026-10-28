@@ -1,0 +1,146 @@
+{
+  "info": {
+    "name": "Practical 13 - AI Task Description",
+    "description": "Uses a private Postman environment for email/password. The collection stores only the login JWT as a collection variable; never save API keys in Postman requests or exports.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "email", "value": "" },
+    { "key": "password", "value": "" },
+    { "key": "token", "value": "" },
+    { "key": "taskTitle", "value": "Prepare database backup" },
+    { "key": "failureTitle", "value": "Review offline recovery plan" },
+    { "key": "taskDescription", "value": "Review database backup and verify the restore procedure." }
+  ],
+  "item": [
+    {
+      "name": "1. Login",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Login returns 200', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('token', pm.response.json().token);"
+          ]
+        }
+      }],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}", "options": { "raw": { "language": "json" } } },
+        "url": "{{baseUrl}}/login"
+      }
+    },
+    {
+      "name": "2. Generate description (requires configured Gemini key)",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Gemini returned a non-fallback suggestion', () => {",
+            "  pm.response.to.have.status(200);",
+            "  const result = pm.response.json();",
+            "  pm.expect(result.fallback).to.eql(false);",
+            "  pm.expect(result.description).to.be.a('string').and.not.empty;",
+            "});"
+          ]
+        }
+      }],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "******" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"title\": \"{{taskTitle}}\"\n}", "options": { "raw": { "language": "json" } } },
+        "url": "{{baseUrl}}/api/ai/generate-description"
+      }
+    },
+    {
+      "name": "3. Reject missing title",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": ["pm.test('Missing title returns 400', () => pm.response.to.have.status(400));"]
+        }
+      }],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "******" }
+        ],
+        "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+        "url": "{{baseUrl}}/api/ai/generate-description"
+      }
+    },
+    {
+      "name": "4. Provider fallback (run without a configured key)",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": [
+            "pm.test('Unavailable provider returns a safe fallback', () => {",
+            "  pm.response.to.have.status(503);",
+            "  const result = pm.response.json();",
+            "  pm.expect(result.fallback).to.eql(true);",
+            "  pm.expect(result.description).to.eql('');",
+            "});"
+          ]
+        }
+      }],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "******" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"title\": \"{{failureTitle}}\"\n}", "options": { "raw": { "language": "json" } } },
+        "url": "{{baseUrl}}/api/ai/generate-description"
+      }
+    },
+    {
+      "name": "5. Repeat title immediately (rate limit)",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": ["pm.test('Repeated title returns 429', () => pm.response.to.have.status(429));"]
+        }
+      }],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "******" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"title\": \"{{taskTitle}}\"\n}", "options": { "raw": { "language": "json" } } },
+        "url": "{{baseUrl}}/api/ai/generate-description"
+      }
+    },
+    {
+      "name": "6. Save a manually reviewed task",
+      "event": [{
+        "listen": "test",
+        "script": {
+          "type": "text/javascript",
+          "exec": ["pm.test('Manual task creation returns 201', () => pm.response.to.have.status(201));"]
+        }
+      }],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "******" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"title\": \"{{taskTitle}}\",\n  \"description\": \"{{taskDescription}}\",\n  \"status\": \"pending\"\n}", "options": { "raw": { "language": "json" } } },
+        "url": "{{baseUrl}}/tasks"
+      }
+    }
+  ]
+}
